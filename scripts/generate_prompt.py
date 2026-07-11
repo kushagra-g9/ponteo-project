@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from utils import select_review_focus
+from utils import select_review_focus, get_cost_mode
 
 
 PROMPT_FILES = {
@@ -49,7 +49,9 @@ def compose_compact_review_prompt(prompts_dir: Path, context: dict) -> str:
     if len(changed_files) > 20:
         files_list += f" (+{len(changed_files) - 20} more)"
 
-    return f"""Senior DevSecOps PR reviewer. Review ONLY changed files. Be concise (max 600 words).
+    word_limit = 350 if get_cost_mode() != "full" else 600
+
+    return f"""Senior DevSecOps PR reviewer. Review ONLY changed files. Be concise (max {word_limit} words).
 
 PR #{metadata.get('pr_number')}: {metadata.get('title', '')}
 Files: {files_list}
@@ -87,60 +89,70 @@ def compose_compact_test_prompt(
     test_summary: str,
     changed_files: list[str],
     git_diff: str = "",
+    compact: bool = False,
 ) -> str:
     files_list = ", ".join(changed_files[:15]) or "unknown"
-    qa_focus = _condensed_instruction(prompts_dir, "test_validation")
-    regression_focus = _condensed_instruction(prompts_dir, "regression_analysis")
     diff_block = git_diff.strip() or "(no diff)"
-    if len(diff_block) > 8000:
-        diff_block = diff_block[:7800] + "\n...[diff truncated]...\n"
+    diff_limit = 4_000 if compact else 6_000
+    if len(diff_block) > diff_limit:
+        diff_block = diff_block[: diff_limit - 40] + "\n...[diff truncated]...\n"
 
-    return f"""You are an AI QA engineer for a production Node.js microservice PR.
+    if compact:
+        return f"""QA check (concise, max 150 words). Tests passed.
 
-Tasks:
-- Summarize test execution and failures (if any)
-- Identify regression risks for changed code
-- Recommend additional test coverage for touched files
-- Flag critical gaps that should block merge
-
-QA focus: {qa_focus}
-Regression focus: {regression_focus}
-
-Tests exit code: {test_exit_code}
-Changed files: {files_list}
-
+Changed: {files_list}
 Test output:
 ```
 {test_summary}
 ```
 
-Diff (changed files only):
+Diff:
 ```diff
 {diff_block}
 ```
 
-Output Markdown with these sections:
-
+Output:
 # Test Validation Report
-
 ## Test Execution Summary
-- Tests ran / counts / result
-
-## Failure Summary
-Explain failures and likely root causes (or "None").
-
-## Regression Risks
-Top risks from the diff (max 3).
-
-## Coverage Gaps
-Changed code lacking tests (max 5, or "None").
-
-## Recommended Additional Tests
-Specific tests to add (max 5, or "None").
-
+## Regression Risks (max 2)
+## Coverage Gaps (max 3, or None)
+## Recommended Additional Tests (max 2, or None)
 ## Pipeline Verdict
-End with exactly one line: **PASS** or **FAIL**
-FAIL if tests failed, no tests ran, critical paths untested, or high regression risk without tests.
+End with **PASS** or **FAIL** (FAIL only for critical untested src changes).
+"""
+
+    qa_focus = _condensed_instruction(prompts_dir, "test_validation")
+    regression_focus = _condensed_instruction(prompts_dir, "regression_analysis")
+
+    return f"""AI QA engineer for a Node.js microservice PR. Be concise (max 250 words).
+
+Tasks: summarize tests/failures, regression risks, coverage gaps.
+
+QA: {qa_focus}
+Regression: {regression_focus}
+
+Exit code: {test_exit_code}
+Files: {files_list}
+
+Tests:
+```
+{test_summary}
+```
+
+Diff:
+```diff
+{diff_block}
+```
+
+Output sections:
+# Test Validation Report
+## Test Execution Summary
+## Failure Summary
+## Regression Risks
+## Coverage Gaps
+## Recommended Additional Tests
+## Pipeline Verdict
+End with **PASS** or **FAIL**
 """
 
 

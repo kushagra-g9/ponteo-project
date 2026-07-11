@@ -1,4 +1,4 @@
-"""AI-assisted test validation — QA summary, regression risks, coverage (Stage 3)."""
+"""AI-assisted test validation — token-aware QA summary (Stage 3)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,14 @@ from pathlib import Path
 
 from bedrock_client import converse
 from generate_prompt import compose_compact_test_prompt
-from utils import env_bool, env_int, read_text, summarize_test_output
+from utils import (
+    read_text,
+    should_run_test_bedrock,
+    summarize_test_output,
+    token_limits_for_mode,
+    write_skip_report,
+    env_int,
+)
 
 
 def extract_verdict(markdown: str) -> str:
@@ -60,15 +67,18 @@ def run_bedrock_validation(
     test_summary: str,
     changed_files: list[str],
     git_diff: str,
+    compact: bool,
 ) -> str:
+    limits = token_limits_for_mode()
     prompt = compose_compact_test_prompt(
         prompts_dir,
         test_exit_code=test_exit_code,
         test_summary=test_summary,
         changed_files=changed_files,
         git_diff=git_diff,
+        compact=compact,
     )
-    max_output = env_int("BEDROCK_TEST_MAX_OUTPUT_TOKENS", 1024)
+    max_output = env_int("BEDROCK_TEST_MAX_OUTPUT_TOKENS", limits["test_out"])
     print(f"Bedrock test validation: ~{len(prompt)} input chars, max {max_output} output tokens")
     return converse(prompt, max_tokens=max_output)
 
@@ -80,18 +90,28 @@ def main() -> int:
     prompts_dir = Path(os.environ.get("PROMPTS_DIR", "prompts"))
     test_output_path = Path(os.environ.get("TEST_OUTPUT_PATH", "test-output.log"))
     test_exit_code = os.environ.get("TEST_EXIT_CODE", "1")
-    skip_ai_on_pass = env_bool("BEDROCK_SKIP_TEST_AI_ON_PASS", default=False)
+    tests_failed = test_exit_code != "0"
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     changed_files = load_changed_files(context_dir)
-    git_diff = read_text(context_dir / "git-diff.patch", max_bytes=12_500)
+    limits = token_limits_for_mode()
+    git_diff = read_text(context_dir / "git-diff.patch", max_bytes=limits["diff"] + 500)
 
     test_log = test_output_path.read_text(encoding="utf-8", errors="replace") if test_output_path.exists() else ""
-    test_summary = summarize_test_output(test_log)
+    test_summary = summarize_test_output(test_log, max_chars=limits["test_log"])
 
-    # Tests failed — AI summary when possible, otherwise structured auto report
-    if test_exit_code != "0":
-        failures = summarize_test_output(test_log, max_chars=2000)
+    run_bedrock, skip_reason = should_run_test_bedrock(changed_files, tests_failed=tests_failed)
+    compact_prompt = not tests_failed
+
+    if not run_bedrock and not tests_failed:
+        report = write_skip_report("Test Validation Report", skip_reason)
+        output_path.write_text(report, encoding="utf-8")
+        verdict_path.write_text("PASS", encoding="utf-8")
+        print(f"Test AI skipped: {skip_reason}")
+        return 0
+
+    if tests_failed:
+        failures = summarize_test_output(test_log, max_chars=limits["test_log"])
         try:
             report = run_bedrock_validation(
                 prompts_dir,
@@ -99,6 +119,7 @@ def main() -> int:
                 test_summary=test_summary,
                 changed_files=changed_files,
                 git_diff=git_diff,
+                compact=False,
             )
         except Exception as exc:
             print(f"Bedrock unavailable for failure summary: {exc}")
@@ -112,30 +133,13 @@ def main() -> int:
         print(f"Test validation verdict (failures): {verdict}")
         return 0 if verdict == "PASS" else 1
 
-    # Tests passed — optional skip for token savings
-    if skip_ai_on_pass:
-        report = (
-            "# Test Validation Report\n\n"
-            "## Test Execution Summary\n"
-            "- All tests passed.\n"
-            "- AI validation skipped (`BEDROCK_SKIP_TEST_AI_ON_PASS=true`).\n\n"
-            "## Failure Summary\nNone\n\n"
-            "## Regression Risks\nNot assessed (AI skipped).\n\n"
-            "## Coverage Gaps\nNot assessed (AI skipped).\n\n"
-            "## Recommended Additional Tests\nNot assessed (AI skipped).\n\n"
-            "## Pipeline Verdict\n\n**PASS**\n"
-        )
-        output_path.write_text(report, encoding="utf-8")
-        verdict_path.write_text("PASS", encoding="utf-8")
-        print("Tests passed; auto-PASS without Bedrock call.")
-        return 0
-
     report = run_bedrock_validation(
         prompts_dir,
         test_exit_code=test_exit_code,
         test_summary=test_summary,
         changed_files=changed_files,
         git_diff=git_diff,
+        compact=compact_prompt,
     )
     verdict = extract_verdict(report)
     output_path.write_text(report, encoding="utf-8")

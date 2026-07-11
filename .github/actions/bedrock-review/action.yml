@@ -79,14 +79,15 @@ runs:
 
     - name: Run Bedrock review
       shell: bash
-      env:
+        env:
         BEDROCK_MODEL_ID: ${{ inputs.model-id }}
         AWS_REGION: ${{ inputs.aws-region }}
         CONTEXT_DIR: context
         OUTPUT_PATH: artifacts/ai-review.md
         PROMPTS_DIR: prompts
         BLOCKING_MODE: ${{ inputs.blocking }}
-        BEDROCK_MAX_OUTPUT_TOKENS: ${{ env.BEDROCK_MAX_OUTPUT_TOKENS || '2048' }}
+        BEDROCK_COST_MODE: ${{ env.BEDROCK_COST_MODE || 'smart' }}
+        BEDROCK_MAX_OUTPUT_TOKENS: ${{ env.BEDROCK_MAX_OUTPUT_TOKENS || '1024' }}
         BEDROCK_MAX_DIFF_CHARS: ${{ env.BEDROCK_MAX_DIFF_CHARS || '12000' }}
         BEDROCK_MAX_PR_BODY_CHARS: ${{ env.BEDROCK_MAX_PR_BODY_CHARS || '400' }}
       run: python3 scripts/bedrock_review.py

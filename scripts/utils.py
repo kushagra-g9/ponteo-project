@@ -10,10 +10,14 @@ from typing import Any
 
 
 # Token budget defaults (override via GitHub vars / workflow env)
-DEFAULT_MAX_DIFF_CHARS = 12_000
-DEFAULT_MAX_TEST_LOG_CHARS = 3_000
-DEFAULT_MAX_PR_BODY_CHARS = 400
-DEFAULT_MAX_SONAR_CHARS = 800
+DEFAULT_MAX_DIFF_CHARS = 8_000
+DEFAULT_MAX_TEST_LOG_CHARS = 2_000
+DEFAULT_MAX_PR_BODY_CHARS = 300
+DEFAULT_MAX_SONAR_CHARS = 600
+
+CODE_PATH_PREFIXES = ("src/", "test/")
+CODE_EXTENSIONS = {".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"}
+INFRA_FILENAMES = {"Dockerfile", "package.json", "package-lock.json", "sonar-project.properties"}
 
 
 def env_int(name: str, default: int) -> int:
@@ -62,8 +66,89 @@ def load_changed_files(context_dir: Path) -> list[str]:
     ]
 
 
+def get_cost_mode() -> str:
+    """smart (default): Bedrock only when useful. economy: minimal. full: always call."""
+    legacy_skip = os.environ.get("BEDROCK_SKIP_TEST_AI_ON_PASS", "").strip().lower()
+    if legacy_skip in {"1", "true", "yes", "on"}:
+        return "economy"
+    mode = os.environ.get("BEDROCK_COST_MODE", "smart").strip().lower()
+    if mode in {"smart", "economy", "full"}:
+        return mode
+    return "smart"
+
+
+def token_limits_for_mode() -> dict[str, int]:
+    mode = get_cost_mode()
+    if mode == "full":
+        return {"diff": 12_000, "review_out": 2048, "test_out": 1024, "test_log": 3_000}
+    if mode == "economy":
+        return {"diff": 6_000, "review_out": 768, "test_out": 384, "test_log": 1_500}
+    return {"diff": 8_000, "review_out": 1024, "test_out": 512, "test_log": 2_000}
+
+
+def is_application_change(changed_files: list[str]) -> bool:
+    for path in changed_files:
+        normalized = path.replace("\\", "/")
+        if any(normalized.startswith(prefix) for prefix in CODE_PATH_PREFIXES):
+            return True
+        if Path(normalized).suffix.lower() in CODE_EXTENSIONS:
+            return True
+        if Path(normalized).name in INFRA_FILENAMES:
+            return True
+    return False
+
+
+def has_src_without_test_changes(changed_files: list[str]) -> bool:
+    src_changed = any(f.replace("\\", "/").startswith("src/") for f in changed_files)
+    test_changed = any(f.replace("\\", "/").startswith("test/") for f in changed_files)
+    return src_changed and not test_changed
+
+
+def should_run_review_bedrock(changed_files: list[str], git_diff: str) -> tuple[bool, str]:
+    if is_trivial_diff(git_diff, changed_files):
+        return False, "trivial diff"
+    mode = get_cost_mode()
+    if mode == "full":
+        return True, "full cost mode"
+    if not is_application_change(changed_files):
+        return False, "no application code changes (CI/docs only)"
+    return True, f"{mode} mode — application files changed"
+
+
+def should_run_test_bedrock(
+    changed_files: list[str],
+    *,
+    tests_failed: bool,
+) -> tuple[bool, str]:
+    if tests_failed:
+        return True, "tests failed — summarize failures"
+    mode = get_cost_mode()
+    if mode == "economy":
+        return False, "economy mode — skip AI QA when tests pass"
+    if mode == "full":
+        return True, "full cost mode"
+    if not is_application_change(changed_files):
+        return False, "no application code changes"
+    if has_src_without_test_changes(changed_files):
+        return True, "src changed without test updates — check coverage gaps"
+    if any(f.replace("\\", "/").startswith("test/") for f in changed_files):
+        return True, "test files changed — validate coverage"
+    if any(f.replace("\\", "/").startswith("src/") for f in changed_files):
+        return True, "src changed — lightweight QA check"
+    return False, "no QA trigger for changed files"
+
+
+def write_skip_report(title: str, reason: str) -> str:
+    return (
+        f"# {title}\n\n"
+        f"**Bedrock skipped (token savings):** {reason}\n\n"
+        "## Pipeline Verdict\n\n**PASS**\n"
+    )
+
+
 def truncate_for_model(text: str, max_chars: int | None = None) -> str:
-    limit = max_chars or env_int("BEDROCK_MAX_DIFF_CHARS", DEFAULT_MAX_DIFF_CHARS)
+    limits = token_limits_for_mode()
+    limit = max_chars or env_int("BEDROCK_MAX_DIFF_CHARS", limits["diff"])
     if len(text) <= limit:
         return text
     return text[: limit - 120] + "\n...[truncated to save tokens]...\n"
