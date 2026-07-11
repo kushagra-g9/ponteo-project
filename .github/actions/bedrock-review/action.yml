@@ -79,7 +79,7 @@ runs:
 
     - name: Run Bedrock review
       shell: bash
-        env:
+      env:
         BEDROCK_MODEL_ID: ${{ inputs.model-id }}
         AWS_REGION: ${{ inputs.aws-region }}
         CONTEXT_DIR: context
@@ -88,8 +88,8 @@ runs:
         BLOCKING_MODE: ${{ inputs.blocking }}
         BEDROCK_COST_MODE: ${{ env.BEDROCK_COST_MODE || 'smart' }}
         BEDROCK_MAX_OUTPUT_TOKENS: ${{ env.BEDROCK_MAX_OUTPUT_TOKENS || '1024' }}
-        BEDROCK_MAX_DIFF_CHARS: ${{ env.BEDROCK_MAX_DIFF_CHARS || '12000' }}
-        BEDROCK_MAX_PR_BODY_CHARS: ${{ env.BEDROCK_MAX_PR_BODY_CHARS || '400' }}
+        BEDROCK_MAX_DIFF_CHARS: ${{ env.BEDROCK_MAX_DIFF_CHARS || '8000' }}
+        BEDROCK_MAX_PR_BODY_CHARS: ${{ env.BEDROCK_MAX_PR_BODY_CHARS || '300' }}
       run: python3 scripts/bedrock_review.py
 
     - name: Enforce AI review verdict
