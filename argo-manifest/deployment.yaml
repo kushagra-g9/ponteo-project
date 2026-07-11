@@ -1,0 +1,82 @@
+# GitOps manifest — copy argo-manifest/ into your GitOps repo (ponteo-project-gitops).
+# Stage 6 updates ONLY spec.template.spec.containers[0].image after manual approval.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ponteo-project
+  namespace: ponteo
+  labels:
+    app.kubernetes.io/name: ponteo-project
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: ponteo
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ponteo-project
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ponteo-project
+        app.kubernetes.io/component: api
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ponteo-project
+          image: 514201996443.dkr.ecr.us-east-1.amazonaws.com/ponteo/ponteo-project:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: "3000"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            failureThreshold: 12
+            periodSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            capabilities:
+              drop:
+                - ALL

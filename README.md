@@ -33,7 +33,7 @@ Stage 4 runs in this order:
 | `.github/workflows/pr-pipeline.yml` | 6-stage pipeline |
 | `.github/actions/` | Sonar, Bedrock, Docker+Trivy composite actions |
 | `scripts/`, `prompts/` | Bedrock AI review (token-optimized) |
-| `gitops/` | Sample manifest for `ponteo-project-gitops` repo |
+| `argo-manifest/` | Deployment + Service for GitOps repo (Stage 6 updates image tag only) |
 
 ---
 
@@ -63,7 +63,7 @@ git commit -m "chore: add lock file"
 | Repo | Contents |
 |------|----------|
 | `ponteo-project` | Push this folder |
-| `ponteo-project-gitops` | (optional) Copy `gitops/` for Stage 6 |
+| `ponteo-project-gitops` | Copy `argo-manifest/` folder for Stage 6 |
 
 ```bash
 git init
@@ -145,7 +145,7 @@ BEDROCK_SKIP_TEST_AI_ON_PASS=true
 
 # Optional Stage 6:
 # GITOPS_REPO=YOUR_GITHUB_USER/ponteo-project-gitops
-# GITOPS_MANIFEST_PATH=apps/ponteo-project/deployment.yaml
+# GITOPS_MANIFEST_PATH=argo-manifest/deployment.yaml
 ```
 
 ---

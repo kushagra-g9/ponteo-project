@@ -44,7 +44,7 @@ env:
   ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
   SERVICE_NAME: ${{ vars.SERVICE_NAME || 'ponteo-project' }}
   GITOPS_REPO: ${{ vars.GITOPS_REPO }}
-  GITOPS_MANIFEST_PATH: ${{ vars.GITOPS_MANIFEST_PATH || 'apps/ponteo-project/deployment.yaml' }}
+  GITOPS_MANIFEST_PATH: ${{ vars.GITOPS_MANIFEST_PATH || 'argo-manifest/deployment.yaml' }}
   DOCKERFILE_PATH: ${{ vars.DOCKERFILE_PATH || 'Dockerfile' }}
   SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
   BEDROCK_MAX_OUTPUT_TOKENS: ${{ vars.BEDROCK_MAX_OUTPUT_TOKENS || '2048' }}
@@ -404,11 +404,12 @@ jobs:
             exit 0
           fi
 
-          git commit -m "ci(pr-${{ github.event.pull_request.number }}): deploy ${IMAGE_TAG}
+          git commit -m "ci(pr-${{ github.event.pull_request.number }}): update image tag ${IMAGE_TAG}
 
           PR: ${{ github.repository }}#${{ github.event.pull_request.number }}
           SHA: ${{ github.sha }}
-          Approved by: ${{ github.actor }}"
+          Approved by: ${{ github.actor }}
+          Manifest: ${MANIFEST} (image field only)"
 
       - name: Push GitOps changes
         if: steps.gitops-check.outputs.enabled == 'true'
