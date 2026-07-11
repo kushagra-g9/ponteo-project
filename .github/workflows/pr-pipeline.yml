@@ -49,12 +49,13 @@ env:
   MANIFEST_PATH: ${{ vars.GITOPS_MANIFEST_PATH || 'argo-manifest/deployment.yaml' }}
   DOCKERFILE_PATH: ${{ vars.DOCKERFILE_PATH || 'Dockerfile' }}
   SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
-  BEDROCK_MAX_OUTPUT_TOKENS: ${{ vars.BEDROCK_MAX_OUTPUT_TOKENS || '2048' }}
-  BEDROCK_MAX_DIFF_CHARS: ${{ vars.BEDROCK_MAX_DIFF_CHARS || '12000' }}
-  BEDROCK_MAX_PR_BODY_CHARS: ${{ vars.BEDROCK_MAX_PR_BODY_CHARS || '400' }}
-  BEDROCK_MAX_TEST_LOG_CHARS: ${{ vars.BEDROCK_MAX_TEST_LOG_CHARS || '3000' }}
+  BEDROCK_MAX_OUTPUT_TOKENS: ${{ vars.BEDROCK_MAX_OUTPUT_TOKENS || '1024' }}
+  BEDROCK_MAX_DIFF_CHARS: ${{ vars.BEDROCK_MAX_DIFF_CHARS || '8000' }}
+  BEDROCK_MAX_PR_BODY_CHARS: ${{ vars.BEDROCK_MAX_PR_BODY_CHARS || '300' }}
+  BEDROCK_MAX_TEST_LOG_CHARS: ${{ vars.BEDROCK_MAX_TEST_LOG_CHARS || '2000' }}
   BEDROCK_TEST_MAX_OUTPUT_TOKENS: ${{ vars.BEDROCK_TEST_MAX_OUTPUT_TOKENS || '512' }}
-  BEDROCK_SKIP_TEST_AI_ON_PASS: ${{ vars.BEDROCK_SKIP_TEST_AI_ON_PASS || 'true' }}
+  BEDROCK_COST_MODE: ${{ vars.BEDROCK_COST_MODE || 'smart' }}
+  BEDROCK_SKIP_TEST_AI_ON_PASS: ${{ vars.BEDROCK_SKIP_TEST_AI_ON_PASS || 'false' }}
 
 jobs:
   stage-1-sonarqube:
@@ -189,7 +190,8 @@ jobs:
           python3 scripts/github_comment.py \
             --pr-number "${{ github.event.pull_request.number }}" \
             --report-path artifacts/ai-review.md \
-            --repository "${{ github.repository }}"
+            --repository "${{ github.repository }}" \
+            --marker "<!-- ponteo-ai-review-bot -->"
 
       - name: Stage 2 failure summary
         if: failure()
@@ -242,7 +244,7 @@ jobs:
           NODE_ENV: test
 
       - name: Configure AWS credentials (OIDC)
-        if: env.BEDROCK_SKIP_TEST_AI_ON_PASS != 'true' || steps.run-tests.outputs.exit-code != '0'
+        if: steps.run-tests.outputs.exit-code != '0' || env.BEDROCK_COST_MODE != 'economy'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
@@ -269,13 +271,34 @@ jobs:
           OUTPUT_PATH: artifacts/test-validation.md
           PROMPTS_DIR: prompts
           BEDROCK_SKIP_TEST_AI_ON_PASS: ${{ env.BEDROCK_SKIP_TEST_AI_ON_PASS }}
+          BEDROCK_COST_MODE: ${{ env.BEDROCK_COST_MODE }}
           BEDROCK_MAX_TEST_LOG_CHARS: ${{ env.BEDROCK_MAX_TEST_LOG_CHARS }}
           BEDROCK_TEST_MAX_OUTPUT_TOKENS: ${{ env.BEDROCK_TEST_MAX_OUTPUT_TOKENS }}
+          BEDROCK_MAX_DIFF_CHARS: ${{ env.BEDROCK_MAX_DIFF_CHARS }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
           mkdir -p context artifacts
-          git fetch origin "${{ github.base_ref }}" --depth=1
-          git diff --name-only "origin/${{ github.base_ref }}...HEAD" > context/changed-files.txt
+          git fetch origin "${BASE_REF}" --depth=1
+          git diff --name-only "origin/${BASE_REF}...HEAD" > context/changed-files.txt
+          if [ -s context/changed-files.txt ]; then
+            git diff "origin/${BASE_REF}...HEAD" -- $(cat context/changed-files.txt) > context/git-diff.full
+            head -c "${{ env.BEDROCK_MAX_DIFF_CHARS }}" context/git-diff.full > context/git-diff.patch
+            rm -f context/git-diff.full
+          else
+            : > context/git-diff.patch
+          fi
           python3 scripts/test_validation.py
+
+      - name: Publish test validation as PR comment
+        if: always() && hashFiles('artifacts/test-validation.md') != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 scripts/github_comment.py \
+            --pr-number "${{ github.event.pull_request.number }}" \
+            --report-path artifacts/test-validation.md \
+            --repository "${{ github.repository }}" \
+            --marker "<!-- ponteo-test-validation-bot -->"
 
       - name: Upload test validation report
         uses: actions/upload-artifact@v4

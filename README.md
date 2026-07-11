@@ -7,7 +7,7 @@ personal GitHub + AWS account, then replicated on the client account for product
 PR opened
   -> Stage 1: SonarQube quality gate   (blocking)
   -> Stage 2: AI Code Review (Bedrock)  (blocking)
-  -> Stage 3: Tests + AI validation     (blocking)
+  -> Stage 3: Tests + AI QA (coverage, regression, failures)  (blocking)
   -> Stage 4: Docker build -> ECR push -> Trivy scan (blocking)
   -> Stage 5: Manual approval gate       (blocking)
   -> Stage 6: Update image tag on `argo-manifest` branch (manifest-only)
@@ -140,7 +140,10 @@ SERVICE_NAME=ponteo-project
 SONAR_PROJECT_KEY=your-sonar-project-key
 SONAR_ORGANIZATION=your-sonar-org-key
 BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-5-20250929-v1:0
-BEDROCK_SKIP_TEST_AI_ON_PASS=true
+BEDROCK_COST_MODE=smart
+
+# Cost modes: smart (default) | economy | full
+# legacy: BEDROCK_SKIP_TEST_AI_ON_PASS=true forces economy for Stage 3
 
 # Manifest branch (default: argo-manifest — contains only argo-manifest/ folder):
 # MANIFEST_BRANCH=argo-manifest
@@ -166,9 +169,60 @@ SONAR_HOST_URL=https://sonarcloud.io
 
 Create `staging` and `production` with yourself as required reviewer.
 
+Stage 2 and Stage 3 post **PR comments only** (no merge permissions).
+
+### Bedrock token / cost control (`BEDROCK_COST_MODE`)
+
+| Mode | Stage 2 AI review | Stage 3 AI QA |
+|------|-------------------|---------------|
+| **`smart`** (default) | Only when `src/`, `test/`, Dockerfile, or `package.json` change | On test **failure**; on pass only for app changes (especially `src/` without `test/`) |
+| **`economy`** | Same as smart | Bedrock **only when tests fail** |
+| **`full`** | Always (except trivial diffs) | Always when tests pass |
+
+Also skipped automatically: trivial diffs, CI/docs-only PRs (`.github/`, `prompts/`, README).
+
+Set `BEDROCK_SKIP_TEST_AI_ON_PASS=true` to force economy behavior (legacy).
+
 ---
 
-## Step 10 — Run the pipeline
+## Step 10 — Branch protection on `main`
+
+Merge is blocked until PR validation passes (Stages **1–4** + SonarCloud).
+Deploy approval (Stages **5–6**) is **not** required to merge — that gates manifest promotion only.
+
+### Option A — Script (recommended)
+
+```bash
+python3 scripts/setup_branch_protection.py
+```
+
+Requires a GitHub token with **admin** access to the repo (or `git credential` with same scope).
+
+### Option B — GitHub UI
+
+**Settings → Branches → Edit rule** for `main`:
+
+| Setting | Value |
+|---------|--------|
+| Require a pull request before merging | Yes |
+| Required approving reviews | 0 (solo demo) or 1+ (team/client) |
+| Require status checks to pass | Yes |
+| Require branches to be up to date | Yes |
+| Include administrators | Yes |
+
+**Required status checks** (exact names):
+
+- `Stage 1 - SonarQube Scan`
+- `Stage 2 - AI Code Review`
+- `Stage 3 - AI-Assisted Tests`
+- `Stage 4 - Docker Build + ECR + Trivy`
+- `SonarCloud Code Analysis`
+
+Do **not** require Stage 5 or Stage 6 for merge — those are deploy gates.
+
+---
+
+## Step 11 — Run the pipeline
 
 ```bash
 git checkout -b feature/test-pipeline

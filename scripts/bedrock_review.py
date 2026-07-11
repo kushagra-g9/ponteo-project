@@ -13,8 +13,10 @@ from utils import (
     build_pr_comment_header,
     env_int,
     extract_score,
-    is_trivial_diff,
     load_context,
+    should_run_review_bedrock,
+    token_limits_for_mode,
+    write_skip_report,
 )
 
 
@@ -65,14 +67,19 @@ def main() -> int:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     context = load_context(context_dir)
     changed_files = context["changed_files"]
+    git_diff = context["git_diff"]
 
-    if is_trivial_diff(context["git_diff"], changed_files):
-        write_auto_pass(output_path, verdict_path, "Trivial/no changes — AI review skipped to save tokens.")
-        print("Trivial diff; auto-PASS without Bedrock call.")
+    run_review, skip_reason = should_run_review_bedrock(changed_files, git_diff)
+    if not run_review:
+        report = write_skip_report("AI Review Summary", skip_reason)
+        output_path.write_text(report, encoding="utf-8")
+        verdict_path.write_text("PASS", encoding="utf-8")
+        print(f"AI review skipped: {skip_reason}")
         return 0
 
+    limits = token_limits_for_mode()
     prompt = compose_compact_review_prompt(prompts_dir, context)
-    max_output = env_int("BEDROCK_MAX_OUTPUT_TOKENS", 2048)
+    max_output = env_int("BEDROCK_MAX_OUTPUT_TOKENS", limits["review_out"])
 
     print(f"Bedrock review: ~{len(prompt)} input chars, max {max_output} output tokens")
     review_markdown = converse(prompt, max_tokens=max_output)

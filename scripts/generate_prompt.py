@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from utils import select_review_focus
+from utils import select_review_focus, get_cost_mode
 
 
 PROMPT_FILES = {
@@ -49,7 +49,9 @@ def compose_compact_review_prompt(prompts_dir: Path, context: dict) -> str:
     if len(changed_files) > 20:
         files_list += f" (+{len(changed_files) - 20} more)"
 
-    return f"""Senior DevSecOps PR reviewer. Review ONLY changed files. Be concise (max 600 words).
+    word_limit = 350 if get_cost_mode() != "full" else 600
+
+    return f"""Senior DevSecOps PR reviewer. Review ONLY changed files. Be concise (max {word_limit} words).
 
 PR #{metadata.get('pr_number')}: {metadata.get('title', '')}
 Files: {files_list}
@@ -86,27 +88,71 @@ def compose_compact_test_prompt(
     test_exit_code: str,
     test_summary: str,
     changed_files: list[str],
+    git_diff: str = "",
+    compact: bool = False,
 ) -> str:
     files_list = ", ".join(changed_files[:15]) or "unknown"
+    diff_block = git_diff.strip() or "(no diff)"
+    diff_limit = 4_000 if compact else 6_000
+    if len(diff_block) > diff_limit:
+        diff_block = diff_block[: diff_limit - 40] + "\n...[diff truncated]...\n"
 
-    return f"""QA validator. Be concise (max 200 words).
+    if compact:
+        return f"""QA check (concise, max 150 words). Tests passed.
 
-Tests exit code: {test_exit_code}
-Changed files: {files_list}
-
-Test output (failures/summary only):
+Changed: {files_list}
+Test output:
 ```
 {test_summary}
 ```
 
-Check: tests ran, failures explained, critical paths covered.
+Diff:
+```diff
+{diff_block}
+```
 
 Output:
 # Test Validation Report
-## Summary (2-3 bullets)
-## Coverage Gaps (max 3, or "None")
+## Test Execution Summary
+## Regression Risks (max 2)
+## Coverage Gaps (max 3, or None)
+## Recommended Additional Tests (max 2, or None)
 ## Pipeline Verdict
-End with exactly: **PASS** or **FAIL**
+End with **PASS** or **FAIL** (FAIL only for critical untested src changes).
+"""
+
+    qa_focus = _condensed_instruction(prompts_dir, "test_validation")
+    regression_focus = _condensed_instruction(prompts_dir, "regression_analysis")
+
+    return f"""AI QA engineer for a Node.js microservice PR. Be concise (max 250 words).
+
+Tasks: summarize tests/failures, regression risks, coverage gaps.
+
+QA: {qa_focus}
+Regression: {regression_focus}
+
+Exit code: {test_exit_code}
+Files: {files_list}
+
+Tests:
+```
+{test_summary}
+```
+
+Diff:
+```diff
+{diff_block}
+```
+
+Output sections:
+# Test Validation Report
+## Test Execution Summary
+## Failure Summary
+## Regression Risks
+## Coverage Gaps
+## Recommended Additional Tests
+## Pipeline Verdict
+End with **PASS** or **FAIL**
 """
 
 
