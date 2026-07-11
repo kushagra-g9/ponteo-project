@@ -1,0 +1,36 @@
+# GitOps manifest — copy into separate `ponteo-project-gitops` repository.
+# Stage 6 updates the image tag; ArgoCD syncs to EKS when configured.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ponteo-project
+  namespace: ponteo
+  labels:
+    app: ponteo-project
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ponteo-project
+  template:
+    metadata:
+      labels:
+        app: ponteo-project
+    spec:
+      containers:
+        - name: ponteo-project
+          image: YOUR_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/ponteo/ponteo-project:latest
+          ports:
+            - containerPort: 3000
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 20

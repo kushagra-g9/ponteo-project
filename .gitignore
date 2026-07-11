@@ -1,0 +1,14 @@
+node_modules/
+__pycache__/
+*.pyc
+coverage/
+dist/
+artifacts/
+context/
+*.log
+.scannerwork/
+trivy-*.json
+trivy-*.sarif
+sbom.cyclonedx.json
+.env
+.DS_Store

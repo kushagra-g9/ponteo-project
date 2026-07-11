@@ -1,0 +1,65 @@
+name: Trivy Filesystem Scan
+description: Scan filesystem, dependencies, secrets, Dockerfile, K8s, and Terraform
+
+inputs:
+  trivy-version:
+    description: Trivy version
+    required: false
+    default: '0.58.1'
+  severity:
+    description: Comma-separated severity levels to fail on
+    required: false
+    default: 'HIGH,CRITICAL'
+  scan-paths:
+    description: Paths to scan
+    required: false
+    default: '.'
+  fail-on-findings:
+    description: Fail workflow on findings
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: Cache Trivy DB
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/trivy
+        key: trivy-db-${{ inputs.trivy-version }}-${{ runner.os }}
+        restore-keys: |
+          trivy-db-${{ inputs.trivy-version }}-
+
+    - name: Trivy filesystem vulnerability scan
+      uses: aquasecurity/trivy-action@0.28.0
+      with:
+        version: ${{ inputs.trivy-version }}
+        scan-type: fs
+        scan-ref: ${{ inputs.scan-paths }}
+        format: json
+        output: trivy-fs-results.json
+        severity: ${{ inputs.severity }}
+        scanners: vuln,secret,misconfig
+        ignore-unfixed: true
+        exit-code: ${{ inputs.fail-on-findings == 'true' && '1' || '0' }}
+
+    - name: Trivy SARIF upload
+      uses: aquasecurity/trivy-action@0.28.0
+      if: always()
+      with:
+        version: ${{ inputs.trivy-version }}
+        scan-type: fs
+        scan-ref: ${{ inputs.scan-paths }}
+        format: sarif
+        output: trivy-fs-results.sarif
+        severity: ${{ inputs.severity }}
+        scanners: vuln,secret,misconfig
+        exit-code: '0'
+
+    - name: Upload SARIF to GitHub Security
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      continue-on-error: true
+      with:
+        sarif_file: trivy-fs-results.sarif
+        category: trivy-filesystem

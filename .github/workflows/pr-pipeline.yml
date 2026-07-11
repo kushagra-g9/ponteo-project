@@ -1,0 +1,443 @@
+# =============================================================================
+# Ponteo Project — 6-Stage PR Pipeline
+# Trigger: Developer opens/updates Pull Request on GitHub
+#
+# Stage 1: SonarQube Scan (quality gate)          PASS -> continue | FAIL -> stop
+# Stage 2: AI Code Review (AWS Bedrock)           PASS -> continue | FAIL -> stop
+# Stage 3: Test Cases Run (AI-assisted)           PASS -> continue | FAIL -> stop
+# Stage 4: Docker Build + ECR Push + Trivy Scan   PASS -> continue | FAIL -> stop
+# Stage 5: Manual Approval Gate                   Approved -> continue | Rejected -> stop
+# Stage 6: Update GitOps Manifest               GitOps update -> ArgoCD sync
+#
+# Stage 4 flow: build image -> push to ECR -> Trivy scan (HIGH/CRITICAL blocks)
+# =============================================================================
+name: PR Pipeline
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main, staging, develop]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
+
+concurrency:
+  group: pr-pipeline-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+  security-events: write
+  actions: read
+
+env:
+  NODE_VERSION: '22'
+  PYTHON_VERSION: '3.12'
+  TRIVY_VERSION: '0.58.1'
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  BEDROCK_MODEL_ID: ${{ vars.BEDROCK_MODEL_ID || 'anthropic.claude-sonnet-4-20250514-v1:0' }}
+  ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+  SERVICE_NAME: ${{ vars.SERVICE_NAME || 'ponteo-project' }}
+  GITOPS_REPO: ${{ vars.GITOPS_REPO }}
+  GITOPS_MANIFEST_PATH: ${{ vars.GITOPS_MANIFEST_PATH || 'apps/ponteo-project/deployment.yaml' }}
+  DOCKERFILE_PATH: ${{ vars.DOCKERFILE_PATH || 'Dockerfile' }}
+  SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+  BEDROCK_MAX_OUTPUT_TOKENS: ${{ vars.BEDROCK_MAX_OUTPUT_TOKENS || '2048' }}
+  BEDROCK_MAX_DIFF_CHARS: ${{ vars.BEDROCK_MAX_DIFF_CHARS || '12000' }}
+  BEDROCK_MAX_PR_BODY_CHARS: ${{ vars.BEDROCK_MAX_PR_BODY_CHARS || '400' }}
+  BEDROCK_MAX_TEST_LOG_CHARS: ${{ vars.BEDROCK_MAX_TEST_LOG_CHARS || '3000' }}
+  BEDROCK_TEST_MAX_OUTPUT_TOKENS: ${{ vars.BEDROCK_TEST_MAX_OUTPUT_TOKENS || '512' }}
+  BEDROCK_SKIP_TEST_AI_ON_PASS: ${{ vars.BEDROCK_SKIP_TEST_AI_ON_PASS || 'true' }}
+
+jobs:
+  stage-1-sonarqube:
+    name: 'Stage 1 - SonarQube Scan'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js with caching
+        uses: ./.github/actions/setup-node
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: npm ci --prefer-offline --no-audit
+
+      - name: Run unit tests with coverage
+        run: npm run test:coverage --if-present || npm test -- --coverage --ci
+        env:
+          CI: true
+          NODE_ENV: test
+
+      - name: Run SonarQube scan and quality gate
+        uses: ./.github/actions/sonarqube-scan
+        with:
+          sonar-host-url: ${{ secrets.SONAR_HOST_URL }}
+          sonar-token: ${{ secrets.SONAR_TOKEN }}
+          sonar-project-key: ${{ vars.SONAR_PROJECT_KEY }}
+          sonar-organization: ${{ env.SONAR_ORGANIZATION }}
+          pull-request-key: ${{ github.event.pull_request.number }}
+          pull-request-branch: ${{ github.head_ref }}
+          pull-request-base: ${{ github.base_ref }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Sonar report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sonar-report
+          path: .scannerwork/report-task.txt
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: |
+            coverage/
+            lcov.info
+          retention-days: 7
+          if-no-files-found: warn
+
+  stage-2-ai-review:
+    name: 'Stage 2 - AI Code Review'
+    runs-on: ubuntu-latest
+    needs: stage-1-sonarqube
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download Sonar report
+        uses: actions/download-artifact@v4
+        with:
+          name: sonar-report
+          path: scan-artifacts
+        continue-on-error: true
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-bedrock-review-${{ github.run_id }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Install Python dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Run Bedrock AI code review (blocking)
+        uses: ./.github/actions/bedrock-review
+        with:
+          model-id: ${{ env.BEDROCK_MODEL_ID }}
+          aws-region: ${{ env.AWS_REGION }}
+          pr-number: ${{ github.event.pull_request.number }}
+          pr-title: ${{ github.event.pull_request.title }}
+          pr-body: ${{ github.event.pull_request.body }}
+          base-ref: ${{ github.base_ref }}
+          head-ref: ${{ github.head_ref }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          blocking: 'true'
+
+      - name: Upload AI review artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ai-review-report
+          path: artifacts/ai-review.md
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Publish AI review as PR comment
+        if: always() && hashFiles('artifacts/ai-review.md') != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 scripts/github_comment.py \
+            --pr-number "${{ github.event.pull_request.number }}" \
+            --report-path artifacts/ai-review.md \
+            --repository "${{ github.repository }}"
+
+  stage-3-ai-tests:
+    name: 'Stage 3 - AI-Assisted Tests'
+    runs-on: ubuntu-latest
+    needs: stage-2-ai-review
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js with caching
+        uses: ./.github/actions/setup-node
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: npm ci --prefer-offline --no-audit
+
+      - name: Run test suite
+        id: run-tests
+        continue-on-error: true
+        run: |
+          npm run test:ci --if-present > test-output.log 2>&1 || npm test -- --ci >> test-output.log 2>&1
+          EXIT_CODE=$?
+          echo "exit-code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
+          cat test-output.log
+          exit 0
+        env:
+          CI: true
+          NODE_ENV: test
+
+      - name: Configure AWS credentials (OIDC)
+        if: env.BEDROCK_SKIP_TEST_AI_ON_PASS != 'true' || steps.run-tests.outputs.exit-code != '0'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-bedrock-tests-${{ github.run_id }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Install Python dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: AI-assisted test validation (blocking)
+        env:
+          BEDROCK_MODEL_ID: ${{ env.BEDROCK_MODEL_ID }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+          TEST_EXIT_CODE: ${{ steps.run-tests.outputs.exit-code }}
+          TEST_OUTPUT_PATH: test-output.log
+          CONTEXT_DIR: context
+          OUTPUT_PATH: artifacts/test-validation.md
+          PROMPTS_DIR: prompts
+          BEDROCK_SKIP_TEST_AI_ON_PASS: ${{ env.BEDROCK_SKIP_TEST_AI_ON_PASS }}
+          BEDROCK_MAX_TEST_LOG_CHARS: ${{ env.BEDROCK_MAX_TEST_LOG_CHARS }}
+          BEDROCK_TEST_MAX_OUTPUT_TOKENS: ${{ env.BEDROCK_TEST_MAX_OUTPUT_TOKENS }}
+        run: |
+          mkdir -p context artifacts
+          git fetch origin "${{ github.base_ref }}" --depth=1
+          git diff --name-only "origin/${{ github.base_ref }}...HEAD" > context/changed-files.txt
+          python3 scripts/test_validation.py
+
+      - name: Upload test validation report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-validation-report
+          path: |
+            artifacts/test-validation.md
+            test-output.log
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Fail if tests or AI validation failed
+        run: |
+          if [ "${{ steps.run-tests.outputs.exit-code }}" != "0" ]; then
+            echo "Stage 3 FAILED: unit/integration tests did not pass."
+            exit 1
+          fi
+          if [ ! -f artifacts/test-validation-verdict.txt ]; then
+            echo "Stage 3 FAILED: AI test validation verdict missing."
+            exit 1
+          fi
+          VERDICT=$(tr -d '[:space:]' < artifacts/test-validation-verdict.txt)
+          if [ "$VERDICT" != "PASS" ]; then
+            echo "Stage 3 FAILED: AI test validation verdict = $VERDICT"
+            cat artifacts/test-validation.md || true
+            exit 1
+          fi
+          echo "Stage 3 PASSED: tests and AI validation succeeded."
+
+  stage-4-docker-ecr:
+    name: 'Stage 4 - Docker Build + ECR + Trivy'
+    runs-on: ubuntu-latest
+    needs: stage-3-ai-tests
+    timeout-minutes: 45
+    outputs:
+      image-uri: ${{ steps.build.outputs.image-uri }}
+      image-tag: ${{ steps.tag.outputs.image-tag }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Compute image tag
+        id: tag
+        run: echo "image-tag=pr-${{ github.event.pull_request.number }}-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-ecr-${{ github.run_id }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build, push to ECR, then Trivy scan + SBOM
+        id: build
+        uses: ./.github/actions/docker-build-push
+        with:
+          ecr-registry: ${{ env.ECR_REGISTRY }}
+          ecr-repository: ${{ env.ECR_REPOSITORY }}
+          image-tag: ${{ steps.tag.outputs.image-tag }}
+          dockerfile: ${{ env.DOCKERFILE_PATH }}
+          trivy-version: ${{ env.TRIVY_VERSION }}
+          severity: 'HIGH,CRITICAL'
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Upload Trivy image scan report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-image-report
+          path: trivy-image-results.*
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sbom-cyclonedx
+          path: sbom.cyclonedx.json
+          retention-days: 30
+          if-no-files-found: ignore
+
+  stage-5-approval:
+    name: 'Stage 5 - Manual Approval'
+    runs-on: ubuntu-latest
+    needs: stage-4-docker-ecr
+    environment:
+      name: ${{ github.base_ref == 'main' && 'production' || 'staging' }}
+    timeout-minutes: 1440
+    steps:
+      - name: Record approval
+        run: |
+          echo "Deployment approved by: ${{ github.actor }}"
+          echo "Environment: ${{ github.base_ref == 'main' && 'production' || 'staging' }}"
+          echo "Image: ${{ needs.stage-4-docker-ecr.outputs.image-uri }}"
+
+  stage-6-gitops-deploy:
+    name: 'Stage 6 - GitOps Deploy'
+    runs-on: ubuntu-latest
+    needs: [stage-4-docker-ecr, stage-5-approval]
+    timeout-minutes: 15
+    steps:
+      - name: Check GitOps configuration
+        id: gitops-check
+        run: |
+          if [ -z "${{ env.GITOPS_REPO }}" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "GITOPS_REPO not set — Stage 6 skipped."
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip GitOps update (GITOPS_REPO not configured)
+        if: steps.gitops-check.outputs.enabled == 'false'
+        run: |
+          {
+            echo "## Stage 6 - GitOps Deploy (SKIPPED)"
+            echo ""
+            echo "Set \`GITOPS_REPO\` and \`GITOPS_PAT\` to enable GitOps manifest updates."
+            echo ""
+            echo "**Image in ECR:** \`${{ needs.stage-4-docker-ecr.outputs.image-uri }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Checkout GitOps repository
+        if: steps.gitops-check.outputs.enabled == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.GITOPS_REPO }}
+          token: ${{ secrets.GITOPS_PAT }}
+          path: gitops
+
+      - name: Update image tag in ArgoCD manifest
+        if: steps.gitops-check.outputs.enabled == 'true'
+        working-directory: gitops
+        env:
+          IMAGE_URI: ${{ needs.stage-4-docker-ecr.outputs.image-uri }}
+          IMAGE_TAG: ${{ needs.stage-4-docker-ecr.outputs.image-tag }}
+          MANIFEST: ${{ env.GITOPS_MANIFEST_PATH }}
+        run: |
+          set -euo pipefail
+
+          if [ ! -f "$MANIFEST" ]; then
+            echo "Manifest not found: $MANIFEST"
+            exit 1
+          fi
+
+          if command -v yq >/dev/null 2>&1; then
+            yq -i ".spec.template.spec.containers[0].image = \"${IMAGE_URI}\"" "$MANIFEST"
+          else
+            sed -i "s|image:.*${{ env.ECR_REPOSITORY }}.*|image: ${IMAGE_URI}|g" "$MANIFEST"
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$MANIFEST"
+
+          if git diff --cached --quiet; then
+            echo "No manifest changes required."
+            exit 0
+          fi
+
+          git commit -m "ci(pr-${{ github.event.pull_request.number }}): deploy ${IMAGE_TAG}
+
+          PR: ${{ github.repository }}#${{ github.event.pull_request.number }}
+          SHA: ${{ github.sha }}
+          Approved by: ${{ github.actor }}"
+
+      - name: Push GitOps changes
+        if: steps.gitops-check.outputs.enabled == 'true'
+        working-directory: gitops
+        run: git push origin HEAD
+
+      - name: Pipeline summary
+        run: |
+          {
+            echo "## PR Pipeline Complete"
+            echo ""
+            echo "| Stage | Result |"
+            echo "|-------|--------|"
+            echo "| 1 - SonarQube | PASS |"
+            echo "| 2 - AI Code Review | PASS |"
+            echo "| 3 - AI-Assisted Tests | PASS |"
+            echo "| 4 - Docker + ECR + Trivy | PASS |"
+            echo "| 5 - Manual Approval | APPROVED |"
+            echo "| 6 - GitOps Deploy | ${{ steps.gitops-check.outputs.enabled == 'true' && 'PUSHED' || 'SKIPPED' }} |"
+            echo ""
+            echo "**PR:** #${{ github.event.pull_request.number }}"
+            echo "**Image:** \`${{ needs.stage-4-docker-ecr.outputs.image-uri }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

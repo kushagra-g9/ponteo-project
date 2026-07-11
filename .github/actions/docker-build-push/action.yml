@@ -1,0 +1,124 @@
+name: Docker Build Push
+description: Build Docker image, push to ECR, Trivy scan, SBOM generation
+
+inputs:
+  ecr-registry:
+    description: ECR registry URL
+    required: true
+  ecr-repository:
+    description: ECR repository name
+    required: true
+  image-tag:
+    description: Image tag
+    required: true
+  dockerfile:
+    description: Dockerfile path
+    required: false
+    default: Dockerfile
+  trivy-version:
+    description: Trivy version
+    required: false
+    default: '0.58.1'
+  severity:
+    description: Severity threshold
+    required: false
+    default: 'HIGH,CRITICAL'
+  aws-region:
+    description: AWS region
+    required: true
+
+outputs:
+  image-uri:
+    description: Full image URI
+    value: ${{ steps.meta.outputs.image-uri }}
+
+runs:
+  using: composite
+  steps:
+    - name: Compute image metadata
+      id: meta
+      shell: bash
+      run: |
+        IMAGE_URI="${{ inputs.ecr-registry }}/${{ inputs.ecr-repository }}:${{ inputs.image-tag }}"
+        echo "image-uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
+        echo "image=${IMAGE_URI}" >> "$GITHUB_ENV"
+
+    - name: Build and push Docker image to ECR
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: ${{ inputs.dockerfile }}
+        push: true
+        tags: |
+          ${{ steps.meta.outputs.image-uri }}
+          ${{ inputs.ecr-registry }}/${{ inputs.ecr-repository }}:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        build-args: |
+          BUILD_DATE=${{ github.event.repository.updated_at }}
+          VCS_REF=${{ github.sha }}
+          VERSION=${{ inputs.image-tag }}
+
+    - name: Cache Trivy DB
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/trivy
+        key: trivy-db-${{ inputs.trivy-version }}-${{ runner.os }}
+        restore-keys: |
+          trivy-db-${{ inputs.trivy-version }}-
+
+    - name: Trivy image vulnerability scan (post-ECR push)
+      uses: aquasecurity/trivy-action@0.28.0
+      with:
+        version: ${{ inputs.trivy-version }}
+        image-ref: ${{ steps.meta.outputs.image-uri }}
+        format: json
+        output: trivy-image-results.json
+        severity: ${{ inputs.severity }}
+        scanners: vuln,secret
+        ignore-unfixed: true
+        exit-code: '1'
+
+    - name: Trivy image SARIF
+      if: always()
+      uses: aquasecurity/trivy-action@0.28.0
+      with:
+        version: ${{ inputs.trivy-version }}
+        image-ref: ${{ steps.meta.outputs.image-uri }}
+        format: sarif
+        output: trivy-image-results.sarif
+        severity: ${{ inputs.severity }}
+        exit-code: '0'
+
+    - name: Upload image SARIF to GitHub Security
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      continue-on-error: true
+      with:
+        sarif_file: trivy-image-results.sarif
+        category: trivy-image
+
+    - name: Generate SBOM (CycloneDX)
+      if: success()
+      uses: aquasecurity/trivy-action@0.28.0
+      with:
+        version: ${{ inputs.trivy-version }}
+        scan-type: image
+        image-ref: ${{ steps.meta.outputs.image-uri }}
+        format: cyclonedx
+        output: sbom.cyclonedx.json
+        exit-code: '0'
+
+    - name: Trivy scan summary
+      if: always()
+      shell: bash
+      run: |
+        {
+          echo "## Trivy Image Scan (post-ECR push)"
+          echo ""
+          echo "| Field | Value |"
+          echo "|-------|-------|"
+          echo "| Image | \`${{ steps.meta.outputs.image-uri }}\` |"
+          echo "| Severity threshold | \`${{ inputs.severity }}\` |"
+          echo "| Scanners | vuln, secret |"
+        } >> "$GITHUB_STEP_SUMMARY"

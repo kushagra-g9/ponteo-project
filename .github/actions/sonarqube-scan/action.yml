@@ -1,0 +1,64 @@
+name: SonarQube Scan
+description: Run SonarQube scanner with quality gate enforcement
+
+inputs:
+  sonar-host-url:
+    description: SonarQube server URL
+    required: true
+  sonar-token:
+    description: SonarQube authentication token
+    required: true
+  sonar-project-key:
+    description: SonarQube project key
+    required: true
+  sonar-organization:
+    description: SonarCloud organization (leave empty for self-hosted SonarQube)
+    required: false
+    default: ''
+  pull-request-key:
+    description: Pull request number
+    required: false
+    default: ''
+  pull-request-branch:
+    description: Source branch name
+    required: false
+    default: ''
+  pull-request-base:
+    description: Target branch name
+    required: false
+    default: ''
+  github-token:
+    description: GitHub token for PR decoration
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Cache SonarQube scanner
+      uses: actions/cache@v4
+      with:
+        path: ~/.sonar/cache
+        key: sonar-cache-${{ runner.os }}-${{ hashFiles('sonar-project.properties') }}
+        restore-keys: |
+          sonar-cache-${{ runner.os }}-
+
+    - name: SonarQube Scan
+      uses: SonarSource/sonarqube-scan-action@v4.2.1
+      env:
+        SONAR_TOKEN: ${{ inputs.sonar-token }}
+        SONAR_HOST_URL: ${{ inputs.sonar-host-url }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      with:
+        args: >
+          -Dsonar.projectKey=${{ inputs.sonar-project-key }}
+          ${{ inputs.sonar-organization != '' && format('-Dsonar.organization={0}', inputs.sonar-organization) || '' }}
+          -Dsonar.pullrequest.key=${{ inputs.pull-request-key }}
+          -Dsonar.pullrequest.branch=${{ inputs.pull-request-branch }}
+          -Dsonar.pullrequest.base=${{ inputs.pull-request-base }}
+
+    - name: SonarQube Quality Gate
+      uses: SonarSource/sonarqube-quality-gate-action@v1.1.0
+      timeout-minutes: 10
+      env:
+        SONAR_TOKEN: ${{ inputs.sonar-token }}
+        SONAR_HOST_URL: ${{ inputs.sonar-host-url }}

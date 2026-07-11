@@ -1,0 +1,105 @@
+name: Bedrock AI Review
+description: Token-optimized Amazon Bedrock PR review
+
+inputs:
+  model-id:
+    description: Bedrock model ID
+    required: true
+  aws-region:
+    description: AWS region
+    required: true
+  pr-number:
+    description: Pull request number
+    required: true
+  pr-title:
+    description: Pull request title
+    required: true
+  pr-body:
+    description: Pull request description
+    required: false
+    default: ''
+  base-ref:
+    description: Base branch ref
+    required: true
+  head-ref:
+    description: Head branch ref
+    required: true
+  github-token:
+    description: GitHub token
+    required: true
+  blocking:
+    description: Fail pipeline if AI verdict is FAIL
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Generate minimal git context
+      shell: bash
+      env:
+        PR_NUMBER: ${{ inputs.pr-number }}
+        PR_TITLE: ${{ inputs.pr-title }}
+        PR_BODY: ${{ inputs.pr-body }}
+        BASE_REF: ${{ inputs.base-ref }}
+        HEAD_REF: ${{ inputs.head-ref }}
+        MAX_DIFF_CHARS: ${{ env.BEDROCK_MAX_DIFF_CHARS || '12000' }}
+      run: |
+        set -euo pipefail
+        mkdir -p artifacts context
+
+        git fetch origin "${BASE_REF}" --depth=1
+
+        git diff --name-only "origin/${BASE_REF}...HEAD" > context/changed-files.txt
+
+        if [ ! -s context/changed-files.txt ]; then
+          : > context/git-diff.patch
+        else
+          git diff "origin/${BASE_REF}...HEAD" -- $(cat context/changed-files.txt) \
+            | head -c "${MAX_DIFF_CHARS}" > context/git-diff.patch
+        fi
+
+        python3 -c '
+        import json, os
+        meta = {
+            "pr_number": int(os.environ["PR_NUMBER"]),
+            "title": os.environ.get("PR_TITLE", "")[:200],
+            "body": os.environ.get("PR_BODY", "")[:400],
+            "base_ref": os.environ["BASE_REF"],
+            "head_ref": os.environ["HEAD_REF"],
+        }
+        open("context/pr-metadata.json", "w").write(json.dumps(meta))
+        '
+
+        if [ -d scan-artifacts ]; then
+          cp scan-artifacts/report-task.txt context/sonar-summary.txt 2>/dev/null || true
+        fi
+
+    - name: Run Bedrock review
+      shell: bash
+      env:
+        BEDROCK_MODEL_ID: ${{ inputs.model-id }}
+        AWS_REGION: ${{ inputs.aws-region }}
+        CONTEXT_DIR: context
+        OUTPUT_PATH: artifacts/ai-review.md
+        PROMPTS_DIR: prompts
+        BLOCKING_MODE: ${{ inputs.blocking }}
+        BEDROCK_MAX_OUTPUT_TOKENS: ${{ env.BEDROCK_MAX_OUTPUT_TOKENS || '2048' }}
+        BEDROCK_MAX_DIFF_CHARS: ${{ env.BEDROCK_MAX_DIFF_CHARS || '12000' }}
+        BEDROCK_MAX_PR_BODY_CHARS: ${{ env.BEDROCK_MAX_PR_BODY_CHARS || '400' }}
+      run: python3 scripts/bedrock_review.py
+
+    - name: Enforce AI review verdict
+      if: inputs.blocking == 'true'
+      shell: bash
+      run: |
+        if [ ! -f artifacts/ai-review-verdict.txt ]; then
+          echo "AI review verdict file missing."
+          exit 1
+        fi
+        VERDICT=$(tr -d '[:space:]' < artifacts/ai-review-verdict.txt)
+        if [ "$VERDICT" != "PASS" ]; then
+          echo "Stage 2 FAILED: AI code review verdict = $VERDICT"
+          exit 1
+        fi
+        echo "Stage 2 PASSED: AI code review approved."
