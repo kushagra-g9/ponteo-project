@@ -7,7 +7,7 @@
 # Stage 3: Test Cases Run (AI-assisted)           PASS -> continue | FAIL -> stop
 # Stage 4: Docker Build + ECR Push + Trivy Scan   PASS -> continue | FAIL -> stop
 # Stage 5: Manual Approval Gate                   Approved -> continue | Rejected -> stop
-# Stage 6: Update GitOps Manifest               GitOps update -> ArgoCD sync
+# Stage 6: Update image tag in argo-manifest/deployment.yaml (no Argo/EKS required)
 #
 # Stage 4 flow: build image -> push to ECR -> Trivy scan (HIGH/CRITICAL blocks)
 # =============================================================================
@@ -44,7 +44,7 @@ env:
   ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
   SERVICE_NAME: ${{ vars.SERVICE_NAME || 'ponteo-project' }}
   GITOPS_REPO: ${{ vars.GITOPS_REPO }}
-  GITOPS_MANIFEST_PATH: ${{ vars.GITOPS_MANIFEST_PATH || 'argo-manifest/deployment.yaml' }}
+  MANIFEST_PATH: ${{ vars.GITOPS_MANIFEST_PATH || 'argo-manifest/deployment.yaml' }}
   DOCKERFILE_PATH: ${{ vars.DOCKERFILE_PATH || 'Dockerfile' }}
   SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
   BEDROCK_MAX_OUTPUT_TOKENS: ${{ vars.BEDROCK_MAX_OUTPUT_TOKENS || '2048' }}
@@ -339,48 +339,27 @@ jobs:
           echo "Environment: ${{ github.base_ref == 'main' && 'production' || 'staging' }}"
           echo "Image: ${{ needs.stage-4-docker-ecr.outputs.image-uri }}"
 
-  stage-6-gitops-deploy:
-    name: 'Stage 6 - GitOps Deploy'
+  stage-6-update-image-tag:
+    name: 'Stage 6 - Update Image Tag'
     runs-on: ubuntu-latest
     needs: [stage-4-docker-ecr, stage-5-approval]
-    timeout-minutes: 15
+    timeout-minutes: 10
+    permissions:
+      contents: write
     steps:
-      - name: Check GitOps configuration
-        id: gitops-check
-        run: |
-          if [ -z "${{ env.GITOPS_REPO }}" ]; then
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "GITOPS_REPO not set — Stage 6 skipped."
-          else
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Skip GitOps update (GITOPS_REPO not configured)
-        if: steps.gitops-check.outputs.enabled == 'false'
-        run: |
-          {
-            echo "## Stage 6 - GitOps Deploy (SKIPPED)"
-            echo ""
-            echo "Set \`GITOPS_REPO\` and \`GITOPS_PAT\` to enable GitOps manifest updates."
-            echo ""
-            echo "**Image in ECR:** \`${{ needs.stage-4-docker-ecr.outputs.image-uri }}\`"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Checkout GitOps repository
-        if: steps.gitops-check.outputs.enabled == 'true'
+      - name: Checkout base branch
         uses: actions/checkout@v4
         with:
-          repository: ${{ env.GITOPS_REPO }}
-          token: ${{ secrets.GITOPS_PAT }}
-          path: gitops
+          ref: ${{ github.base_ref }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Update image tag in ArgoCD manifest
-        if: steps.gitops-check.outputs.enabled == 'true'
-        working-directory: gitops
+      - name: Update image tag in manifest (this repo)
+        if: env.GITOPS_REPO == ''
         env:
           IMAGE_URI: ${{ needs.stage-4-docker-ecr.outputs.image-uri }}
           IMAGE_TAG: ${{ needs.stage-4-docker-ecr.outputs.image-tag }}
-          MANIFEST: ${{ env.GITOPS_MANIFEST_PATH }}
+          MANIFEST: ${{ env.MANIFEST_PATH }}
         run: |
           set -euo pipefail
 
@@ -400,7 +379,7 @@ jobs:
           git add "$MANIFEST"
 
           if git diff --cached --quiet; then
-            echo "No manifest changes required."
+            echo "Image tag already up to date."
             exit 0
           fi
 
@@ -409,10 +388,54 @@ jobs:
           PR: ${{ github.repository }}#${{ github.event.pull_request.number }}
           SHA: ${{ github.sha }}
           Approved by: ${{ github.actor }}
-          Manifest: ${MANIFEST} (image field only)"
+          Updated: ${MANIFEST} (image field only)"
 
-      - name: Push GitOps changes
-        if: steps.gitops-check.outputs.enabled == 'true'
+      - name: Push manifest update to base branch
+        if: env.GITOPS_REPO == ''
+        run: git push origin "HEAD:${{ github.base_ref }}"
+
+      - name: Checkout external GitOps repository (optional)
+        if: env.GITOPS_REPO != ''
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.GITOPS_REPO }}
+          token: ${{ secrets.GITOPS_PAT }}
+          path: gitops
+
+      - name: Update image tag in external GitOps repo (optional)
+        if: env.GITOPS_REPO != ''
+        working-directory: gitops
+        env:
+          IMAGE_URI: ${{ needs.stage-4-docker-ecr.outputs.image-uri }}
+          IMAGE_TAG: ${{ needs.stage-4-docker-ecr.outputs.image-tag }}
+          MANIFEST: ${{ env.MANIFEST_PATH }}
+        run: |
+          set -euo pipefail
+
+          if [ ! -f "$MANIFEST" ]; then
+            echo "Manifest not found: $MANIFEST"
+            exit 1
+          fi
+
+          if command -v yq >/dev/null 2>&1; then
+            yq -i ".spec.template.spec.containers[0].image = \"${IMAGE_URI}\"" "$MANIFEST"
+          else
+            sed -i "s|image:.*${{ env.ECR_REPOSITORY }}.*|image: ${IMAGE_URI}|g" "$MANIFEST"
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$MANIFEST"
+
+          if git diff --cached --quiet; then
+            echo "Image tag already up to date."
+            exit 0
+          fi
+
+          git commit -m "ci(pr-${{ github.event.pull_request.number }}): update image tag ${IMAGE_TAG}"
+
+      - name: Push external GitOps changes (optional)
+        if: env.GITOPS_REPO != ''
         working-directory: gitops
         run: git push origin HEAD
 
@@ -428,8 +451,9 @@ jobs:
             echo "| 3 - AI-Assisted Tests | PASS |"
             echo "| 4 - Docker + ECR + Trivy | PASS |"
             echo "| 5 - Manual Approval | APPROVED |"
-            echo "| 6 - GitOps Deploy | ${{ steps.gitops-check.outputs.enabled == 'true' && 'PUSHED' || 'SKIPPED' }} |"
+            echo "| 6 - Update Image Tag | UPDATED |"
             echo ""
             echo "**PR:** #${{ github.event.pull_request.number }}"
             echo "**Image:** \`${{ needs.stage-4-docker-ecr.outputs.image-uri }}\`"
+            echo "**Manifest:** \`${{ env.MANIFEST_PATH }}\` on \`${{ github.base_ref }}\`"
           } >> "$GITHUB_STEP_SUMMARY"

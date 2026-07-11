@@ -1,5 +1,5 @@
-# GitOps manifest — copy argo-manifest/ into your GitOps repo (ponteo-project-gitops).
-# Stage 6 updates ONLY spec.template.spec.containers[0].image after manual approval.
+# Sample Kubernetes manifest. Stage 6 updates ONLY the image field after manual approval.
+# No ArgoCD or EKS required — the pipeline commits the new tag to this file on main.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

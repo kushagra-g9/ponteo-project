@@ -10,7 +10,7 @@ PR opened
   -> Stage 3: Tests + AI validation     (blocking)
   -> Stage 4: Docker build -> ECR push -> Trivy scan (blocking)
   -> Stage 5: Manual approval gate       (blocking)
-  -> Stage 6: GitOps manifest update    (optional)
+  -> Stage 6: Update image tag in argo-manifest/deployment.yaml
 ```
 
 ## Stage 4 — Trivy integration
@@ -33,7 +33,7 @@ Stage 4 runs in this order:
 | `.github/workflows/pr-pipeline.yml` | 6-stage pipeline |
 | `.github/actions/` | Sonar, Bedrock, Docker+Trivy composite actions |
 | `scripts/`, `prompts/` | Bedrock AI review (token-optimized) |
-| `argo-manifest/` | Deployment + Service for GitOps repo (Stage 6 updates image tag only) |
+| `argo-manifest/` | Sample Deployment + Service; Stage 6 updates image tag only |
 
 ---
 
@@ -62,8 +62,7 @@ git commit -m "chore: add lock file"
 
 | Repo | Contents |
 |------|----------|
-| `ponteo-project` | Push this folder |
-| `ponteo-project-gitops` | Copy `argo-manifest/` folder for Stage 6 |
+| `ponteo-project` | This repo (includes `argo-manifest/`) |
 
 ```bash
 git init
@@ -143,7 +142,7 @@ SONAR_ORGANIZATION=your-sonar-org-key
 BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-5-20250929-v1:0
 BEDROCK_SKIP_TEST_AI_ON_PASS=true
 
-# Optional Stage 6:
+# Optional — external GitOps repo (not needed for demo; Stage 6 updates this repo by default):
 # GITOPS_REPO=YOUR_GITHUB_USER/ponteo-project-gitops
 # GITOPS_MANIFEST_PATH=argo-manifest/deployment.yaml
 ```
@@ -156,7 +155,6 @@ BEDROCK_SKIP_TEST_AI_ON_PASS=true
 AWS_ROLE_ARN=arn:aws:iam::YOUR_ACCOUNT_ID:role/github-actions-ponteo-project-ci
 SONAR_TOKEN=<token>
 SONAR_HOST_URL=https://sonarcloud.io
-GITOPS_PAT=<only if Stage 6 enabled>
 ```
 
 ---
