@@ -1,5 +1,8 @@
 # Ponteo Project — CI/CD Pipeline
 
+> **Knowledge Transfer (full setup guide):** [docs/KT-SETUP-GUIDE.md](docs/KT-SETUP-GUIDE.md)  
+> Step-by-step setup, architecture, troubleshooting, and handover checklist.
+
 Self-contained **Ponteo Project** repository for the 6-stage PR pipeline on your
 personal GitHub + AWS account, then replicated on the client account for production.
 
