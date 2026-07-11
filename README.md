@@ -8,9 +8,9 @@ PR opened
   -> Stage 1: SonarQube quality gate   (blocking)
   -> Stage 2: AI Code Review (Bedrock)  (blocking)
   -> Stage 3: Tests + AI QA (coverage, regression, failures)  (blocking)
-  -> Stage 4: Docker build -> Trivy scan -> ECR push (blocking)
-  -> Stage 5: Manual approval gate       (blocking)
-  -> Stage 6: Update image tag on `argo-manifest` branch (manifest-only)
+  -> Stage 4: Docker build + Trivy scan + push to ECR (blocking)
+  -> Stage 5: Manual approval needed to deploy (blocking)
+  -> Stage 6: ArgoCD image tag update on `argo-manifest` branch (manifest-only)
 ```
 
 ## Stage 4 — Trivy integration
@@ -215,7 +215,7 @@ Requires a GitHub token with **admin** access to the repo (or `git credential` w
 - `Stage 1 - SonarQube Scan`
 - `Stage 2 - AI Code Review`
 - `Stage 3 - AI-Assisted Tests`
-- `Stage 4 - Docker Build + ECR + Trivy`
+- `Stage 4 - Docker build + Trivy scan + push to ECR`
 - `SonarCloud Code Analysis`
 
 Do **not** require Stage 5 or Stage 6 for merge — those are deploy gates.
