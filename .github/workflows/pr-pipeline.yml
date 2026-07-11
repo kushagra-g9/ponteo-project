@@ -9,7 +9,7 @@
 # Stage 5: Manual Approval Gate                   Approved -> continue | Rejected -> stop
 # Stage 6: Update image tag on argo-manifest branch (manifest-only; no Argo/EKS required)
 #
-# Stage 4 flow: build image -> push to ECR -> Trivy scan (HIGH/CRITICAL blocks)
+# Stage 4 flow: build image -> Trivy scan -> push to ECR (HIGH/CRITICAL blocks before push)
 # =============================================================================
 name: PR Pipeline
 
@@ -368,7 +368,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build, push to ECR, then Trivy scan
+      - name: Build, Trivy scan, then push to ECR
         id: build
         uses: ./.github/actions/docker-build-push
         with:

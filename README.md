@@ -8,7 +8,7 @@ PR opened
   -> Stage 1: SonarQube quality gate   (blocking)
   -> Stage 2: AI Code Review (Bedrock)  (blocking)
   -> Stage 3: Tests + AI QA (coverage, regression, failures)  (blocking)
-  -> Stage 4: Docker build -> ECR push -> Trivy scan (blocking)
+  -> Stage 4: Docker build -> Trivy scan -> ECR push (blocking)
   -> Stage 5: Manual approval gate       (blocking)
   -> Stage 6: Update image tag on `argo-manifest` branch (manifest-only)
 ```
@@ -17,10 +17,10 @@ PR opened
 
 Stage 4 runs in this order:
 
-1. **Docker build**
-2. **Push to Amazon ECR**
-3. **Trivy image scan** on the pushed image (vuln + secret scanners)
-4. **Pipeline fails** on HIGH or CRITICAL findings
+1. **Docker build** (local — not pushed yet)
+2. **Trivy image scan** on the local image (vuln scanner)
+3. **Pipeline fails** on HIGH or CRITICAL findings — **image is not pushed to ECR**
+4. **Push to Amazon ECR** only after Trivy gate passes
 
 ---
 
@@ -263,7 +263,7 @@ After Stage 4 completes:
 - **Job summary:** Trivy scan details
 - **ECR:** `aws ecr list-images --repository-name ponteo/ponteo-project`
 
-If HIGH/CRITICAL vulnerabilities are found, Stage 4 **fails** (image remains in ECR; do not promote to production).
+If HIGH/CRITICAL vulnerabilities are found, Stage 4 **fails** and the image **is not pushed** to ECR.
 
 ---
 
