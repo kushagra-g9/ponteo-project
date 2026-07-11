@@ -39,7 +39,7 @@ env:
   PYTHON_VERSION: '3.12'
   TRIVY_VERSION: '0.58.1'
   AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
-  BEDROCK_MODEL_ID: ${{ vars.BEDROCK_MODEL_ID || 'anthropic.claude-sonnet-4-20250514-v1:0' }}
+  BEDROCK_MODEL_ID: ${{ vars.BEDROCK_MODEL_ID || 'us.anthropic.claude-sonnet-4-5-20250929-v1:0' }}
   ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
   ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
   SERVICE_NAME: ${{ vars.SERVICE_NAME || 'ponteo-project' }}

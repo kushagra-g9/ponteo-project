@@ -80,7 +80,10 @@ Make the repo **public** if you need Stage 5 approval on a free GitHub account.
 
 ## Step 3 — Enable Amazon Bedrock
 
-AWS Console -> Bedrock -> Model access -> enable **Claude Sonnet 4** in `us-east-1`.
+AWS Console -> Bedrock -> Model catalog -> **Claude Sonnet 4.5** in `us-east-1`.
+Submit the Anthropic use case form (first time only), then test in the playground.
+The pipeline invokes it via the US cross-region inference profile
+`us.anthropic.claude-sonnet-4-5-20250929-v1:0`.
 
 ---
 
@@ -104,7 +107,7 @@ Configure IAM manually in the AWS Console (no policy files in this repo).
 3. **Permissions policy** (attach inline or managed policy on that role)
    - **ECR:** `ecr:GetAuthorizationToken` (resource `*`)
    - **ECR repo:** push/pull on `arn:aws:ecr:REGION:ACCOUNT_ID:repository/ponteo/ponteo-project`
-   - **Bedrock:** `bedrock:InvokeModel`, `bedrock:Converse` on Claude Sonnet 4 foundation model in your region
+   - **Bedrock:** `bedrock:InvokeModel` on the Claude Sonnet 4.5 foundation model (all US regions) and the `us.` inference profile in your account
 
 4. Copy the role ARN for GitHub secret `AWS_ROLE_ARN` (Step 8).
 
@@ -137,7 +140,7 @@ ECR_REPOSITORY=ponteo/ponteo-project
 SERVICE_NAME=ponteo-project
 SONAR_PROJECT_KEY=your-sonar-project-key
 SONAR_ORGANIZATION=your-sonar-org-key
-BEDROCK_MODEL_ID=anthropic.claude-sonnet-4-20250514-v1:0
+BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-5-20250929-v1:0
 BEDROCK_SKIP_TEST_AI_ON_PASS=true
 
 # Optional Stage 6:

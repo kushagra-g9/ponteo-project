@@ -33,8 +33,8 @@ def converse(prompt: str, *, max_tokens: int | None = None) -> str:
         messages=[{"role": "user", "content": [{"text": prompt}]}],
         inferenceConfig={
             "maxTokens": output_limit,
+            # Claude Sonnet 4.5+ accepts only one of temperature/topP
             "temperature": 0.1,
-            "topP": 0.9,
         },
     )
 
