@@ -5,9 +5,17 @@ const { sum } = require('./sum');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
+const VERSION = process.env.APP_VERSION || '1.0.0';
 
 app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
 app.get('/ready', (req, res) => res.status(200).json({ status: 'ready' }));
+
+app.get('/version', (req, res) => {
+  return res.status(200).json({
+    service: 'ponteo-project',
+    version: VERSION,
+  });
+});
 
 app.get('/sum', (req, res) => {
   const a = Number(req.query.a);

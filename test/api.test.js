@@ -25,4 +25,11 @@ describe('ponteo-project API', () => {
     const res = await request(app).get('/sum?a=foo&b=5');
     expect(res.statusCode).toBe(400);
   });
+
+  test('GET /version returns service metadata', async () => {
+    const res = await request(app).get('/version');
+    expect(res.statusCode).toBe(200);
+    expect(res.body.service).toBe('ponteo-project');
+    expect(res.body.version).toBeDefined();
+  });
 });
