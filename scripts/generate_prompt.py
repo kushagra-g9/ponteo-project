@@ -118,7 +118,9 @@ Output:
 ## Coverage Gaps (max 3, or None)
 ## Recommended Additional Tests (max 2, or None)
 ## Pipeline Verdict
-End with **PASS** or **FAIL** (FAIL only for critical untested src changes).
+End with **PASS** when automated tests passed (exit code 0).
+End with **FAIL** only if tests failed, did not run, or there is a critical untested production path.
+Advisory coverage suggestions alone must still be **PASS**.
 """
 
     qa_focus = _condensed_instruction(prompts_dir, "test_validation")

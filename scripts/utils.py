@@ -83,7 +83,7 @@ def token_limits_for_mode() -> dict[str, int]:
         return {"diff": 12_000, "review_out": 2048, "test_out": 1024, "test_log": 3_000}
     if mode == "economy":
         return {"diff": 6_000, "review_out": 768, "test_out": 384, "test_log": 1_500}
-    return {"diff": 8_000, "review_out": 1024, "test_out": 512, "test_log": 2_000}
+    return {"diff": 8_000, "review_out": 1024, "test_out": 768, "test_log": 2_000}
 
 
 def is_application_change(changed_files: list[str]) -> bool:

@@ -19,7 +19,7 @@ from utils import (
 )
 
 
-def extract_verdict(markdown: str) -> str:
+def extract_verdict(markdown: str, *, tests_failed: bool = False) -> str:
     match = re.search(r"\*\*(PASS|FAIL)\*\*\s*$", markdown.strip(), re.MULTILINE | re.IGNORECASE)
     if match:
         return match.group(1).upper()
@@ -28,7 +28,39 @@ def extract_verdict(markdown: str) -> str:
         cleaned = line.strip().upper()
         if cleaned in ("PASS", "FAIL", "**PASS**", "**FAIL**"):
             return cleaned.replace("*", "")
-    return "FAIL"
+
+    # Truncated Bedrock output often omits the final verdict line
+    return "FAIL" if tests_failed else "PASS"
+
+
+def finalize_verdict(test_exit_code: str, ai_verdict: str, report: str, changed_files: list[str]) -> tuple[str, str]:
+    """Tests passing is the hard gate; AI FAIL is blocking only for critical cases."""
+    if test_exit_code != "0":
+        return "FAIL", report
+
+    if ai_verdict == "PASS":
+        return "PASS", report
+
+    report_lower = report.lower()
+    critical_markers = (
+        "critical gap",
+        "critical path untested",
+        "no tests ran",
+        "tests did not run",
+        "tests failed",
+        "must block merge",
+    )
+    if any(marker in report_lower for marker in critical_markers):
+        return "FAIL", report
+
+    note = (
+        "\n\n---\n"
+        "*Pipeline note: All automated tests passed. AI flagged advisory items above; "
+        "they do not block the pipeline.*\n\n"
+        "## Pipeline Verdict\n\n**PASS**\n"
+    )
+    print("Tests passed — AI FAIL downgraded to PASS (advisory QA only).")
+    return "PASS", report.rstrip() + note
 
 
 def load_changed_files(context_dir: Path) -> list[str]:
@@ -125,7 +157,7 @@ def main() -> int:
             print(f"Bedrock unavailable for failure summary: {exc}")
             report = auto_fail_report(test_exit_code, failures)
 
-        verdict = extract_verdict(report)
+        verdict = extract_verdict(report, tests_failed=True)
         if verdict not in {"PASS", "FAIL"}:
             verdict = "FAIL"
         output_path.write_text(report, encoding="utf-8")
@@ -141,7 +173,8 @@ def main() -> int:
         git_diff=git_diff,
         compact=compact_prompt,
     )
-    verdict = extract_verdict(report)
+    ai_verdict = extract_verdict(report, tests_failed=False)
+    verdict, report = finalize_verdict(test_exit_code, ai_verdict, report, changed_files)
     output_path.write_text(report, encoding="utf-8")
     verdict_path.write_text(verdict, encoding="utf-8")
 
