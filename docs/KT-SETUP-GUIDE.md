@@ -1,3 +1,9 @@
+---
+title: KT Setup Guide
+description: Complete knowledge transfer document for Ponteo CI/CD setup and handover
+order: 5
+---
+
 # Ponteo CI/CD Platform — Knowledge Transfer (KT) Guide
 
 **Document type:** Knowledge Transfer / Handover  
