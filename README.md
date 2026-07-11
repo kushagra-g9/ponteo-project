@@ -20,9 +20,7 @@ Stage 4 runs in this order:
 1. **Docker build**
 2. **Push to Amazon ECR**
 3. **Trivy image scan** on the pushed image (vuln + secret scanners)
-4. **SBOM** generation (CycloneDX)
-5. **SARIF** upload to GitHub Security tab
-6. **Pipeline fails** on HIGH or CRITICAL findings
+4. **Pipeline fails** on HIGH or CRITICAL findings
 
 ---
 
@@ -177,9 +175,8 @@ Open a PR to `main` and watch all 6 stages.
 
 After Stage 4 completes:
 
-- **Artifacts:** `trivy-image-report`, `sbom-cyclonedx`
+- **Artifacts:** `trivy-image-report`
 - **Job summary:** Trivy scan details
-- **GitHub Security:** SARIF from Trivy (if repo supports it)
 - **ECR:** `aws ecr list-images --repository-name ponteo/ponteo-project`
 
 If HIGH/CRITICAL vulnerabilities are found, Stage 4 **fails** (image remains in ECR; do not promote to production).

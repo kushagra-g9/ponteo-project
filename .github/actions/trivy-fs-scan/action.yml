@@ -42,24 +42,3 @@ runs:
         scanners: vuln,secret,misconfig
         ignore-unfixed: true
         exit-code: ${{ inputs.fail-on-findings == 'true' && '1' || '0' }}
-
-    - name: Trivy SARIF upload
-      uses: aquasecurity/trivy-action@0.28.0
-      if: always()
-      with:
-        version: ${{ inputs.trivy-version }}
-        scan-type: fs
-        scan-ref: ${{ inputs.scan-paths }}
-        format: sarif
-        output: trivy-fs-results.sarif
-        severity: ${{ inputs.severity }}
-        scanners: vuln,secret,misconfig
-        exit-code: '0'
-
-    - name: Upload SARIF to GitHub Security
-      uses: github/codeql-action/upload-sarif@v3
-      if: always()
-      continue-on-error: true
-      with:
-        sarif_file: trivy-fs-results.sarif
-        category: trivy-filesystem

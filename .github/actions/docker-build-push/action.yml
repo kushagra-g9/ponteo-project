@@ -1,5 +1,5 @@
 name: Docker Build Push
-description: Build Docker image, push to ECR, Trivy scan, SBOM generation
+description: Build Docker image, push to ECR, Trivy vulnerability scan
 
 inputs:
   ecr-registry:
@@ -78,36 +78,6 @@ runs:
         scanners: vuln,secret
         ignore-unfixed: true
         exit-code: '1'
-
-    - name: Trivy image SARIF
-      if: always()
-      uses: aquasecurity/trivy-action@0.28.0
-      with:
-        version: ${{ inputs.trivy-version }}
-        image-ref: ${{ steps.meta.outputs.image-uri }}
-        format: sarif
-        output: trivy-image-results.sarif
-        severity: ${{ inputs.severity }}
-        exit-code: '0'
-
-    - name: Upload image SARIF to GitHub Security
-      uses: github/codeql-action/upload-sarif@v3
-      if: always()
-      continue-on-error: true
-      with:
-        sarif_file: trivy-image-results.sarif
-        category: trivy-image
-
-    - name: Generate SBOM (CycloneDX)
-      if: success()
-      uses: aquasecurity/trivy-action@0.28.0
-      with:
-        version: ${{ inputs.trivy-version }}
-        scan-type: image
-        image-ref: ${{ steps.meta.outputs.image-uri }}
-        format: cyclonedx
-        output: sbom.cyclonedx.json
-        exit-code: '0'
 
     - name: Trivy scan summary
       if: always()

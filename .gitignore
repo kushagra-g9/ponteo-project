@@ -8,7 +8,5 @@ context/
 *.log
 .scannerwork/
 trivy-*.json
-trivy-*.sarif
-sbom.cyclonedx.json
 .env
 .DS_Store
