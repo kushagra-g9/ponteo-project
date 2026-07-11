@@ -27,7 +27,7 @@ REQUIRED_CHECKS = [
     "Stage 1 - SonarQube Scan",
     "Stage 2 - AI Code Review",
     "Stage 3 - AI-Assisted Tests",
-    "Stage 4 - Docker Build + ECR + Trivy",
+    "Stage 4 - Docker build + Trivy scan + push to ECR",
     "SonarCloud Code Analysis",
 ]
 

@@ -13,6 +13,17 @@ describe('ponteo-project API', () => {
   test('GET /ready returns 200', async () => {
     const res = await request(app).get('/ready');
     expect(res.statusCode).toBe(200);
+    expect(res.body.status).toBe('ready');
+    expect(res.body.version).toBeDefined();
+    expect(res.body.gitSha).toBeDefined();
+  });
+
+  test('GET /version returns build metadata', async () => {
+    const res = await request(app).get('/version');
+    expect(res.statusCode).toBe(200);
+    expect(res.body.service).toBe('ponteo-project');
+    expect(res.body.version).toBeDefined();
+    expect(res.body.gitSha).toBeDefined();
   });
 
   test('GET /sum returns computed result', async () => {

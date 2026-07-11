@@ -2,12 +2,17 @@
 
 const express = require('express');
 const { sum } = require('./sum');
+const { getBuildInfo } = require('./version');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
+const buildInfo = getBuildInfo();
 
 app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
-app.get('/ready', (req, res) => res.status(200).json({ status: 'ready' }));
+app.get('/ready', (req, res) =>
+  res.status(200).json({ status: 'ready', version: buildInfo.version, gitSha: buildInfo.gitSha })
+);
+app.get('/version', (req, res) => res.status(200).json(buildInfo));
 
 app.get('/sum', (req, res) => {
   const a = Number(req.query.a);

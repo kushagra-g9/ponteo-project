@@ -12,8 +12,14 @@ RUN npm ci --omit=dev --ignore-scripts --prefer-offline
 FROM gcr.io/distroless/nodejs22-debian12:nonroot
 WORKDIR /app
 
+ARG VERSION=1.0.0
+ARG VCS_REF=unknown
+ARG BUILD_DATE
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV VERSION=${VERSION}
+ENV VCS_REF=${VCS_REF}
+ENV BUILD_DATE=${BUILD_DATE}
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY src ./src
