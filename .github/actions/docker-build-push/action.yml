@@ -18,7 +18,7 @@ inputs:
   trivy-version:
     description: Trivy version
     required: false
-    default: '0.58.1'
+    default: '0.72.0'
   severity:
     description: Severity threshold
     required: false
