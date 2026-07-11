@@ -3,16 +3,17 @@
 # =============================================================================
 
 # --- Stage 1: production dependencies ---
-FROM node:22.11.0-alpine3.20 AS deps
+FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts --prefer-offline
 
 # --- Stage 2: production runtime ---
-FROM node:22.11.0-alpine3.20 AS production
+FROM node:22-alpine AS production
 WORKDIR /app
 
-RUN apk add --no-cache dumb-init wget \
+RUN apk add --no-cache dumb-init \
+    && apk upgrade --no-cache \
     && addgroup -g 1001 -S nodejs \
     && adduser -S nodejs -u 1001 -G nodejs
 
@@ -27,7 +28,7 @@ USER nodejs
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:3000/health || exit 1
+  CMD node -e "fetch('http://127.0.0.1:3000/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 ENTRYPOINT ["dumb-init", "--"]
 CMD ["node", "src/index.js"]
