@@ -55,8 +55,10 @@ runs:
         if [ ! -s context/changed-files.txt ]; then
           : > context/git-diff.patch
         else
-          git diff "origin/${BASE_REF}...HEAD" -- $(cat context/changed-files.txt) \
-            | head -c "${MAX_DIFF_CHARS}" > context/git-diff.patch
+          # Write full diff to file first — piping to head -c causes SIGPIPE (exit 141) with pipefail.
+          git diff "origin/${BASE_REF}...HEAD" -- $(cat context/changed-files.txt) > context/git-diff.full
+          head -c "${MAX_DIFF_CHARS}" context/git-diff.full > context/git-diff.patch
+          rm -f context/git-diff.full
         fi
 
         python3 -c '
@@ -94,12 +96,20 @@ runs:
       shell: bash
       run: |
         if [ ! -f artifacts/ai-review-verdict.txt ]; then
-          echo "AI review verdict file missing."
+          python3 scripts/pipeline_fail.py \
+            --stage "Stage 2" \
+            --reason "AI code review did not produce a verdict file." \
+            --hint "Check Bedrock model access, IAM permissions, and the Run Bedrock review step logs."
           exit 1
         fi
         VERDICT=$(tr -d '[:space:]' < artifacts/ai-review-verdict.txt)
         if [ "$VERDICT" != "PASS" ]; then
-          echo "Stage 2 FAILED: AI code review verdict = $VERDICT"
+          python3 scripts/pipeline_fail.py \
+            --stage "Stage 2" \
+            --reason "AI code review verdict was ${VERDICT} (required: PASS)." \
+            --details-file artifacts/ai-review.md \
+            --hint "Address the security, quality, or regression issues called out in the AI review." \
+            --hint "See the PR comment or ai-review-report artifact for full details."
           exit 1
         fi
         echo "Stage 2 PASSED: AI code review approved."

@@ -14,4 +14,4 @@ function sum(a, b) {
 }
 
 module.exports = { sum };
-// pipeline test 20260711
+// ci: full pipeline validation run
