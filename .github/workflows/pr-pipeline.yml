@@ -37,7 +37,7 @@ permissions:
 env:
   NODE_VERSION: '22'
   PYTHON_VERSION: '3.12'
-  TRIVY_VERSION: '0.72.0'
+  TRIVY_VERSION: 'v0.72.0'
   AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
   BEDROCK_MODEL_ID: ${{ vars.BEDROCK_MODEL_ID || 'us.anthropic.claude-sonnet-4-5-20250929-v1:0' }}
   ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
