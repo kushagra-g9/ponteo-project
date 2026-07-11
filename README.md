@@ -33,7 +33,6 @@ Stage 4 runs in this order:
 | `.github/workflows/pr-pipeline.yml` | 6-stage pipeline |
 | `.github/actions/` | Sonar, Bedrock, Docker+Trivy composite actions |
 | `scripts/`, `prompts/` | Bedrock AI review (token-optimized) |
-| `infra/iam/` | AWS OIDC trust + IAM policy |
 | `gitops/` | Sample manifest for `ponteo-project-gitops` repo |
 
 ---
@@ -85,22 +84,29 @@ AWS Console -> Bedrock -> Model access -> enable **Claude Sonnet 4** in `us-east
 
 ---
 
-## Step 4 — AWS OIDC + IAM role
+## Step 4 — AWS OIDC + IAM role (AWS Console)
 
-1. Create OIDC provider: `token.actions.githubusercontent.com` (audience: `sts.amazonaws.com`)
-2. Edit `infra/iam/github-oidc-trust-policy.json` — replace `YOUR_ACCOUNT_ID`, `YOUR_GITHUB_USER`
-3. Edit `infra/iam/github-actions-policy.json` — replace `YOUR_ACCOUNT_ID`, `REGION`
+Configure IAM manually in the AWS Console (no policy files in this repo).
 
-```bash
-aws iam create-role \
-  --role-name github-actions-ponteo-project-ci \
-  --assume-role-policy-document file://infra/iam/github-oidc-trust-policy.json
+1. **OIDC identity provider** (IAM → Identity providers → Add provider)
+   - Provider URL: `https://token.actions.githubusercontent.com`
+   - Audience: `sts.amazonaws.com`
 
-aws iam put-role-policy \
-  --role-name github-actions-ponteo-project-ci \
-  --policy-name ponteo-project-ci \
-  --policy-document file://infra/iam/github-actions-policy.json
-```
+2. **IAM role** (IAM → Roles → Create role → Web identity)
+   - Identity provider: `token.actions.githubusercontent.com`
+   - Audience: `sts.amazonaws.com`
+   - Trust condition (example `sub` values for repo `kushagra-g9/ponteo-project`):
+     - `repo:kushagra-g9/ponteo-project:ref:refs/heads/main`
+     - `repo:kushagra-g9/ponteo-project:ref:refs/heads/staging`
+     - `repo:kushagra-g9/ponteo-project:ref:refs/heads/develop`
+     - `repo:kushagra-g9/ponteo-project:pull_request`
+
+3. **Permissions policy** (attach inline or managed policy on that role)
+   - **ECR:** `ecr:GetAuthorizationToken` (resource `*`)
+   - **ECR repo:** push/pull on `arn:aws:ecr:REGION:ACCOUNT_ID:repository/ponteo/ponteo-project`
+   - **Bedrock:** `bedrock:InvokeModel`, `bedrock:Converse` on Claude Sonnet 4 foundation model in your region
+
+4. Copy the role ARN for GitHub secret `AWS_ROLE_ARN` (Step 8).
 
 ---
 
