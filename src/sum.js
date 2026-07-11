@@ -2,6 +2,7 @@
 
 /**
  * Add two finite numbers.
+ * Supports integers and decimals (e.g. sum(1.5, 2.5) === 4).
  * @param {number} a
  * @param {number} b
  * @returns {number}
@@ -14,4 +15,3 @@ function sum(a, b) {
 }
 
 module.exports = { sum };
-// ci: full pipeline validation run

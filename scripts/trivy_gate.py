@@ -128,6 +128,7 @@ def print_failure(stage: str, reason: str, blocking: list[dict]) -> None:
     print("  1. Application/library CVEs: run npm audit / update dependencies and rebuild.")
     print("  2. OS/base-image CVEs: pin a newer distroless digest or document in .trivyignore.")
     print("  3. Download artifact 'trivy-image-report' for the full JSON report.")
+    print("  Note: With pre-push scanning, failing images are not uploaded to ECR.")
     print("=" * 72)
 
 

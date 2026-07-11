@@ -18,4 +18,8 @@ describe('sum', () => {
   test('throws on non-finite input', () => {
     expect(() => sum(NaN, 1)).toThrow(TypeError);
   });
+
+  test('adds decimal numbers', () => {
+    expect(sum(1.5, 2.5)).toBe(4);
+  });
 });
