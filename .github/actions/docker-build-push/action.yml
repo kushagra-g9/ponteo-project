@@ -1,5 +1,5 @@
 name: Docker Build Push
-description: Build Docker image, push to ECR, Trivy vulnerability scan
+description: Build Docker image, Trivy scan, push to ECR only if scan passes
 
 inputs:
   ecr-registry:
@@ -44,19 +44,21 @@ runs:
       shell: bash
       run: |
         IMAGE_URI="${{ inputs.ecr-registry }}/${{ inputs.ecr-repository }}:${{ inputs.image-tag }}"
+        LATEST_URI="${{ inputs.ecr-registry }}/${{ inputs.ecr-repository }}:latest"
         echo "image-uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
+        echo "latest-uri=${LATEST_URI}" >> "$GITHUB_OUTPUT"
         echo "image=${IMAGE_URI}" >> "$GITHUB_ENV"
 
-    - name: Build and push Docker image to ECR
+    - name: Build Docker image locally (no push)
       id: docker-build
       uses: docker/build-push-action@v6
       with:
         context: .
         file: ${{ inputs.dockerfile }}
-        push: true
+        push: false
+        load: true
         tags: |
           ${{ steps.meta.outputs.image-uri }}
-          ${{ inputs.ecr-registry }}/${{ inputs.ecr-repository }}:latest
         cache-from: type=gha
         cache-to: type=gha,mode=max
         build-args: |
@@ -72,7 +74,7 @@ runs:
         restore-keys: |
           trivy-db-${{ inputs.trivy-version }}-
 
-    - name: Trivy image vulnerability scan (post-ECR push)
+    - name: Trivy image vulnerability scan (pre-push gate)
       id: trivy-scan
       uses: aquasecurity/trivy-action@v0.36.0
       with:
@@ -98,6 +100,7 @@ runs:
         exit-code: '0'
 
     - name: Trivy blocking gate and failure report
+      id: trivy-gate
       shell: bash
       run: |
         python3 scripts/trivy_gate.py \
@@ -107,38 +110,60 @@ runs:
           --stage "Stage 4" \
           --block-class "${{ inputs.trivy-block-class }}"
 
-    - name: Stage 4 failure summary (build/push)
+    - name: Push scanned image to ECR
+      id: docker-push
+      shell: bash
+      run: |
+        set -euo pipefail
+        IMAGE_URI="${{ steps.meta.outputs.image-uri }}"
+        LATEST_URI="${{ steps.meta.outputs.latest-uri }}"
+        docker tag "${IMAGE_URI}" "${LATEST_URI}"
+        docker push "${IMAGE_URI}"
+        docker push "${LATEST_URI}"
+        echo "Pushed ${IMAGE_URI} after Trivy gate passed."
+
+    - name: Stage 4 failure summary (build)
       if: failure() && steps.docker-build.outcome == 'failure'
       shell: bash
       run: |
         python3 scripts/pipeline_fail.py \
           --stage "Stage 4" \
-          --reason "Docker build or ECR push failed before Trivy scan." \
-          --hint "Check Dockerfile syntax and AWS ECR permissions (OIDC role)." \
-          --hint "Verify GitHub variables ECR_REGISTRY and ECR_REPOSITORY."
+          --reason "Docker build failed before Trivy scan and ECR push." \
+          --hint "Check Dockerfile syntax and build logs."
 
     - name: Stage 4 failure summary (Trivy gate)
-      if: failure() && steps.docker-build.outcome == 'success'
+      if: failure() && steps.docker-build.outcome == 'success' && steps.trivy-gate.outcome == 'failure'
       shell: bash
       run: |
         python3 scripts/pipeline_fail.py \
           --stage "Stage 4" \
-          --reason "Trivy gate failed — blocking HIGH/CRITICAL vulnerabilities found." \
+          --reason "Trivy gate failed — image was NOT pushed to ECR." \
           --hint "Expand the 'Trivy blocking gate and failure report' step for the CVE list." \
           --hint "Download artifact trivy-image-report for full JSON." \
           --hint "Application CVEs: npm audit / dependency updates. OS CVEs: update base image digest."
         exit 1
+
+    - name: Stage 4 failure summary (ECR push)
+      if: failure() && steps.trivy-gate.outcome == 'success' && steps.docker-push.outcome == 'failure'
+      shell: bash
+      run: |
+        python3 scripts/pipeline_fail.py \
+          --stage "Stage 4" \
+          --reason "Trivy passed but ECR push failed." \
+          --hint "Verify AWS ECR permissions on the OIDC role." \
+          --hint "Confirm ECR_REGISTRY and ECR_REPOSITORY variables."
 
     - name: Trivy scan summary
       if: always()
       shell: bash
       run: |
         {
-          echo "## Trivy Image Scan (post-ECR push)"
+          echo "## Trivy Image Scan (pre-push gate)"
           echo ""
           echo "| Field | Value |"
           echo "|-------|-------|"
           echo "| Image | \`${{ steps.meta.outputs.image-uri }}\` |"
+          echo "| Order | build → Trivy → push to ECR |"
           echo "| Severity threshold | \`${{ inputs.severity }}\` |"
           echo "| Blocking class | \`${{ inputs.trivy-block-class }}\` |"
           echo "| Scanners | vuln |"
