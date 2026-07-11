@@ -7,7 +7,7 @@
 # Stage 3: Test Cases Run (AI-assisted)           PASS -> continue | FAIL -> stop
 # Stage 4: Docker Build + ECR Push + Trivy Scan   PASS -> continue | FAIL -> stop
 # Stage 5: Manual Approval Gate                   Approved -> continue | Rejected -> stop
-# Stage 6: Update image tag in argo-manifest/deployment.yaml (no Argo/EKS required)
+# Stage 6: Update image tag on argo-manifest branch (manifest-only; no Argo/EKS required)
 #
 # Stage 4 flow: build image -> push to ECR -> Trivy scan (HIGH/CRITICAL blocks)
 # =============================================================================
@@ -44,6 +44,7 @@ env:
   ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
   SERVICE_NAME: ${{ vars.SERVICE_NAME || 'ponteo-project' }}
   GITOPS_REPO: ${{ vars.GITOPS_REPO }}
+  MANIFEST_BRANCH: ${{ vars.MANIFEST_BRANCH || 'argo-manifest' }}
   MANIFEST_PATH: ${{ vars.GITOPS_MANIFEST_PATH || 'argo-manifest/deployment.yaml' }}
   DOCKERFILE_PATH: ${{ vars.DOCKERFILE_PATH || 'Dockerfile' }}
   SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
@@ -347,21 +348,32 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Checkout base branch
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.base_ref }}
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Update image tag in manifest (this repo)
+      - name: Update image tag on manifest branch
         if: env.GITOPS_REPO == ''
         env:
           IMAGE_URI: ${{ needs.stage-4-docker-ecr.outputs.image-uri }}
           IMAGE_TAG: ${{ needs.stage-4-docker-ecr.outputs.image-tag }}
           MANIFEST: ${{ env.MANIFEST_PATH }}
+          MANIFEST_BRANCH: ${{ env.MANIFEST_BRANCH }}
         run: |
           set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if ! git ls-remote --heads origin "${MANIFEST_BRANCH}" | grep -q .; then
+            echo "Manifest branch '${MANIFEST_BRANCH}' not found."
+            echo "Create it once with only the argo-manifest/ folder, then re-run Stage 6."
+            exit 1
+          fi
+
+          git checkout "${MANIFEST_BRANCH}"
 
           if [ ! -f "$MANIFEST" ]; then
             echo "Manifest not found: $MANIFEST"
@@ -374,8 +386,6 @@ jobs:
             sed -i "s|image:.*${{ env.ECR_REPOSITORY }}.*|image: ${IMAGE_URI}|g" "$MANIFEST"
           fi
 
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add "$MANIFEST"
 
           if git diff --cached --quiet; then
@@ -390,9 +400,7 @@ jobs:
           Approved by: ${{ github.actor }}
           Updated: ${MANIFEST} (image field only)"
 
-      - name: Push manifest update to base branch
-        if: env.GITOPS_REPO == ''
-        run: git push origin "HEAD:${{ github.base_ref }}"
+          git push origin "${MANIFEST_BRANCH}"
 
       - name: Checkout external GitOps repository (optional)
         if: env.GITOPS_REPO != ''
@@ -455,5 +463,5 @@ jobs:
             echo ""
             echo "**PR:** #${{ github.event.pull_request.number }}"
             echo "**Image:** \`${{ needs.stage-4-docker-ecr.outputs.image-uri }}\`"
-            echo "**Manifest:** \`${{ env.MANIFEST_PATH }}\` on \`${{ github.base_ref }}\`"
+            echo "**Manifest:** \`${{ env.MANIFEST_PATH }}\` on branch \`${{ env.MANIFEST_BRANCH }}\`"
           } >> "$GITHUB_STEP_SUMMARY"

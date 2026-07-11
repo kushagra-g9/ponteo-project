@@ -10,7 +10,7 @@ PR opened
   -> Stage 3: Tests + AI validation     (blocking)
   -> Stage 4: Docker build -> ECR push -> Trivy scan (blocking)
   -> Stage 5: Manual approval gate       (blocking)
-  -> Stage 6: Update image tag in argo-manifest/deployment.yaml
+  -> Stage 6: Update image tag on `argo-manifest` branch (manifest-only)
 ```
 
 ## Stage 4 — Trivy integration
@@ -33,7 +33,7 @@ Stage 4 runs in this order:
 | `.github/workflows/pr-pipeline.yml` | 6-stage pipeline |
 | `.github/actions/` | Sonar, Bedrock, Docker+Trivy composite actions |
 | `scripts/`, `prompts/` | Bedrock AI review (token-optimized) |
-| `argo-manifest/` | Sample Deployment + Service; Stage 6 updates image tag only |
+| `argo-manifest` branch | Manifest-only branch (`argo-manifest/`); Stage 6 updates image tag there |
 
 ---
 
@@ -62,7 +62,7 @@ git commit -m "chore: add lock file"
 
 | Repo | Contents |
 |------|----------|
-| `ponteo-project` | This repo (includes `argo-manifest/`) |
+| `ponteo-project` | App + CI (manifests live on `argo-manifest` branch) |
 
 ```bash
 git init
@@ -142,9 +142,12 @@ SONAR_ORGANIZATION=your-sonar-org-key
 BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-5-20250929-v1:0
 BEDROCK_SKIP_TEST_AI_ON_PASS=true
 
-# Optional — external GitOps repo (not needed for demo; Stage 6 updates this repo by default):
-# GITOPS_REPO=YOUR_GITHUB_USER/ponteo-project-gitops
+# Manifest branch (default: argo-manifest — contains only argo-manifest/ folder):
+# MANIFEST_BRANCH=argo-manifest
 # GITOPS_MANIFEST_PATH=argo-manifest/deployment.yaml
+
+# Optional — external GitOps repo instead of in-repo manifest branch:
+# GITOPS_REPO=YOUR_GITHUB_USER/ponteo-project-gitops
 ```
 
 ---
@@ -175,6 +178,26 @@ git push -u origin feature/test-pipeline
 ```
 
 Open a PR to `main` and watch all 6 stages.
+
+After Stage 5 approval, Stage 6 commits the new image tag to the **`argo-manifest`**
+branch (manifest-only — no app code on that branch).
+
+### Manifest branch setup (one time)
+
+```bash
+# From repo root, create an orphan branch with only argo-manifest/
+git checkout --orphan argo-manifest
+git rm -rf . 2>/dev/null || true
+mkdir -p argo-manifest
+# Add deployment.yaml and service.yaml under argo-manifest/
+git add argo-manifest/
+git commit -m "chore: initialize manifest-only branch"
+git push -u origin argo-manifest
+git checkout main
+```
+
+Edit manifests on `argo-manifest` directly (or via Stage 6 after approval). App PRs
+target `main` and do not include manifest files.
 
 ---
 
