@@ -1,4 +1,4 @@
-"""Publish AI review report as a GitHub PR comment."""
+"""Publish pipeline AI reports as GitHub PR comments (comments only — no merge)."""
 
 from __future__ import annotations
 
@@ -8,17 +8,21 @@ import sys
 
 import requests
 
+DEFAULT_MARKER = "<!-- ponteo-ai-review-bot -->"
 
-COMMENT_MARKER = "<!-- ponteo-ai-review-bot -->"
 
-
-def find_existing_comment(session: requests.Session, repo: str, pr_number: int) -> int | None:
+def find_existing_comment(
+    session: requests.Session,
+    repo: str,
+    pr_number: int,
+    marker: str,
+) -> int | None:
     url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments"
     response = session.get(url, params={"per_page": 100})
     response.raise_for_status()
 
     for comment in response.json():
-        if COMMENT_MARKER in comment.get("body", ""):
+        if marker in comment.get("body", ""):
             return comment["id"]
     return None
 
@@ -31,10 +35,11 @@ def truncate_body(body: str, max_chars: int = 65000) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Post AI review to GitHub PR")
+    parser = argparse.ArgumentParser(description="Post pipeline report to GitHub PR")
     parser.add_argument("--pr-number", required=True, type=int)
     parser.add_argument("--report-path", required=True)
     parser.add_argument("--repository", required=True)
+    parser.add_argument("--marker", default=DEFAULT_MARKER, help="HTML comment marker to find/update")
     args = parser.parse_args()
 
     token = os.environ.get("GITHUB_TOKEN")
@@ -42,13 +47,12 @@ def main() -> int:
         print("GITHUB_TOKEN not set", file=sys.stderr)
         return 1
 
-    report_path = args.report_path
-    if not os.path.isfile(report_path):
-        print(f"Report not found: {report_path}", file=sys.stderr)
+    if not os.path.isfile(args.report_path):
+        print(f"Report not found: {args.report_path}", file=sys.stderr)
         return 1
 
-    report_body = open(report_path, encoding="utf-8").read()
-    body = f"{COMMENT_MARKER}\n{truncate_body(report_body)}"
+    report_body = open(args.report_path, encoding="utf-8").read()
+    body = f"{args.marker}\n{truncate_body(report_body)}"
 
     session = requests.Session()
     session.headers.update(
@@ -59,7 +63,7 @@ def main() -> int:
         }
     )
 
-    existing_id = find_existing_comment(session, args.repository, args.pr_number)
+    existing_id = find_existing_comment(session, args.repository, args.pr_number, args.marker)
 
     if existing_id:
         url = f"https://api.github.com/repos/{args.repository}/issues/comments/{existing_id}"

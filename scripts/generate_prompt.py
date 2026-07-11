@@ -86,27 +86,61 @@ def compose_compact_test_prompt(
     test_exit_code: str,
     test_summary: str,
     changed_files: list[str],
+    git_diff: str = "",
 ) -> str:
     files_list = ", ".join(changed_files[:15]) or "unknown"
+    qa_focus = _condensed_instruction(prompts_dir, "test_validation")
+    regression_focus = _condensed_instruction(prompts_dir, "regression_analysis")
+    diff_block = git_diff.strip() or "(no diff)"
+    if len(diff_block) > 8000:
+        diff_block = diff_block[:7800] + "\n...[diff truncated]...\n"
 
-    return f"""QA validator. Be concise (max 200 words).
+    return f"""You are an AI QA engineer for a production Node.js microservice PR.
+
+Tasks:
+- Summarize test execution and failures (if any)
+- Identify regression risks for changed code
+- Recommend additional test coverage for touched files
+- Flag critical gaps that should block merge
+
+QA focus: {qa_focus}
+Regression focus: {regression_focus}
 
 Tests exit code: {test_exit_code}
 Changed files: {files_list}
 
-Test output (failures/summary only):
+Test output:
 ```
 {test_summary}
 ```
 
-Check: tests ran, failures explained, critical paths covered.
+Diff (changed files only):
+```diff
+{diff_block}
+```
 
-Output:
+Output Markdown with these sections:
+
 # Test Validation Report
-## Summary (2-3 bullets)
-## Coverage Gaps (max 3, or "None")
+
+## Test Execution Summary
+- Tests ran / counts / result
+
+## Failure Summary
+Explain failures and likely root causes (or "None").
+
+## Regression Risks
+Top risks from the diff (max 3).
+
+## Coverage Gaps
+Changed code lacking tests (max 5, or "None").
+
+## Recommended Additional Tests
+Specific tests to add (max 5, or "None").
+
 ## Pipeline Verdict
-End with exactly: **PASS** or **FAIL**
+End with exactly one line: **PASS** or **FAIL**
+FAIL if tests failed, no tests ran, critical paths untested, or high regression risk without tests.
 """
 
 
