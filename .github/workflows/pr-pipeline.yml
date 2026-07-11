@@ -194,12 +194,19 @@ jobs:
       - name: Stage 2 failure summary
         if: failure()
         run: |
-          python3 scripts/pipeline_fail.py \
-            --stage "Stage 2" \
-            --reason "AI code review step failed or returned a blocking verdict." \
-            --details-file artifacts/ai-review.md \
-            --hint "Review the PR comment or ai-review-report artifact." \
-            --hint "Verify Bedrock model ID and IAM bedrock:InvokeModel permissions."
+          if [ ! -f artifacts/ai-review-verdict.txt ]; then
+            python3 scripts/pipeline_fail.py \
+              --stage "Stage 2" \
+              --reason "AI review setup or Bedrock call failed before a verdict was written." \
+              --hint "Expand 'Run Bedrock AI code review' — exit 141 means git diff truncation bug (now fixed)." \
+              --hint "Verify Bedrock model ID and IAM bedrock:InvokeModel permissions."
+          else
+            python3 scripts/pipeline_fail.py \
+              --stage "Stage 2" \
+              --reason "AI code review returned a blocking verdict or enforcement failed." \
+              --details-file artifacts/ai-review.md \
+              --hint "Review the PR comment or ai-review-report artifact."
+          fi
           exit 1
 
   stage-3-ai-tests:

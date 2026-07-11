@@ -55,8 +55,10 @@ runs:
         if [ ! -s context/changed-files.txt ]; then
           : > context/git-diff.patch
         else
-          git diff "origin/${BASE_REF}...HEAD" -- $(cat context/changed-files.txt) \
-            | head -c "${MAX_DIFF_CHARS}" > context/git-diff.patch
+          # Write full diff to file first — piping to head -c causes SIGPIPE (exit 141) with pipefail.
+          git diff "origin/${BASE_REF}...HEAD" -- $(cat context/changed-files.txt) > context/git-diff.full
+          head -c "${MAX_DIFF_CHARS}" context/git-diff.full > context/git-diff.patch
+          rm -f context/git-diff.full
         fi
 
         python3 -c '
