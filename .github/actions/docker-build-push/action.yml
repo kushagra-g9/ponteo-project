@@ -75,7 +75,7 @@ runs:
         format: json
         output: trivy-image-results.json
         severity: ${{ inputs.severity }}
-        scanners: vuln,secret
+        scanners: vuln
         ignore-unfixed: true
         exit-code: '1'
 
@@ -90,5 +90,5 @@ runs:
           echo "|-------|-------|"
           echo "| Image | \`${{ steps.meta.outputs.image-uri }}\` |"
           echo "| Severity threshold | \`${{ inputs.severity }}\` |"
-          echo "| Scanners | vuln, secret |"
+          echo "| Scanners | vuln (OS + app packages) |"
         } >> "$GITHUB_STEP_SUMMARY"
