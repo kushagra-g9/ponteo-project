@@ -38,6 +38,7 @@ env:
   NODE_VERSION: '22'
   PYTHON_VERSION: '3.12'
   TRIVY_VERSION: 'v0.72.0'
+  TRIVY_BLOCK_CLASS: ${{ vars.TRIVY_BLOCK_CLASS || 'lang-pkgs' }}
   AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
   BEDROCK_MODEL_ID: ${{ vars.BEDROCK_MODEL_ID || 'us.anthropic.claude-sonnet-4-5-20250929-v1:0' }}
   ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
@@ -112,6 +113,17 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
+      - name: Stage 1 failure summary
+        if: failure()
+        run: |
+          python3 scripts/pipeline_fail.py \
+            --stage "Stage 1" \
+            --reason "SonarQube scan or quality gate did not pass." \
+            --hint "Open SonarCloud and review the Quality Gate for this PR." \
+            --hint "Check unit test coverage and code smells reported by SonarQube." \
+            --hint "Dashboard: ${{ secrets.SONAR_HOST_URL }}/dashboard?id=${{ vars.SONAR_PROJECT_KEY }}"
+          exit 1
+
   stage-2-ai-review:
     name: 'Stage 2 - AI Code Review'
     runs-on: ubuntu-latest
@@ -178,6 +190,17 @@ jobs:
             --pr-number "${{ github.event.pull_request.number }}" \
             --report-path artifacts/ai-review.md \
             --repository "${{ github.repository }}"
+
+      - name: Stage 2 failure summary
+        if: failure()
+        run: |
+          python3 scripts/pipeline_fail.py \
+            --stage "Stage 2" \
+            --reason "AI code review step failed or returned a blocking verdict." \
+            --details-file artifacts/ai-review.md \
+            --hint "Review the PR comment or ai-review-report artifact." \
+            --hint "Verify Bedrock model ID and IAM bedrock:InvokeModel permissions."
+          exit 1
 
   stage-3-ai-tests:
     name: 'Stage 3 - AI-Assisted Tests'
@@ -261,17 +284,27 @@ jobs:
       - name: Fail if tests or AI validation failed
         run: |
           if [ "${{ steps.run-tests.outputs.exit-code }}" != "0" ]; then
-            echo "Stage 3 FAILED: unit/integration tests did not pass."
+            python3 scripts/pipeline_fail.py \
+              --stage "Stage 3" \
+              --reason "Unit/integration tests failed (non-zero exit code)." \
+              --details-file test-output.log \
+              --hint "Run npm test locally and fix failing tests."
             exit 1
           fi
           if [ ! -f artifacts/test-validation-verdict.txt ]; then
-            echo "Stage 3 FAILED: AI test validation verdict missing."
+            python3 scripts/pipeline_fail.py \
+              --stage "Stage 3" \
+              --reason "AI test validation did not produce a verdict file." \
+              --hint "Check scripts/test_validation.py and preceding test logs."
             exit 1
           fi
           VERDICT=$(tr -d '[:space:]' < artifacts/test-validation-verdict.txt)
           if [ "$VERDICT" != "PASS" ]; then
-            echo "Stage 3 FAILED: AI test validation verdict = $VERDICT"
-            cat artifacts/test-validation.md || true
+            python3 scripts/pipeline_fail.py \
+              --stage "Stage 3" \
+              --reason "AI test validation verdict was ${VERDICT} (required: PASS)." \
+              --details-file artifacts/test-validation.md \
+              --hint "Review test failures or AI validation notes in the report."
             exit 1
           fi
           echo "Stage 3 PASSED: tests and AI validation succeeded."
@@ -315,6 +348,7 @@ jobs:
           dockerfile: ${{ env.DOCKERFILE_PATH }}
           trivy-version: ${{ env.TRIVY_VERSION }}
           severity: 'HIGH,CRITICAL'
+          trivy-block-class: ${{ env.TRIVY_BLOCK_CLASS }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Upload Trivy image scan report
@@ -401,6 +435,17 @@ jobs:
           Updated: ${MANIFEST} (image field only)"
 
           git push origin "${MANIFEST_BRANCH}"
+
+      - name: Stage 6 failure summary
+        if: failure() && env.GITOPS_REPO == ''
+        run: |
+          python3 scripts/pipeline_fail.py \
+            --stage "Stage 6" \
+            --reason "Failed to update the image tag on the manifest branch." \
+            --hint "Ensure branch '${{ env.MANIFEST_BRANCH }}' exists with ${{ env.MANIFEST_PATH }}." \
+            --hint "Verify GITHUB_TOKEN contents:write permission on this job." \
+            --hint "Confirm Stage 5 manual approval completed successfully."
+          exit 1
 
       - name: Checkout external GitOps repository (optional)
         if: env.GITOPS_REPO != ''

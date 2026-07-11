@@ -23,6 +23,10 @@ inputs:
     description: Severity threshold
     required: false
     default: 'HIGH,CRITICAL'
+  trivy-block-class:
+    description: Trivy result class that blocks the pipeline (lang-pkgs or os-pkgs)
+    required: false
+    default: 'lang-pkgs'
   aws-region:
     description: AWS region
     required: true
@@ -44,6 +48,7 @@ runs:
         echo "image=${IMAGE_URI}" >> "$GITHUB_ENV"
 
     - name: Build and push Docker image to ECR
+      id: docker-build
       uses: docker/build-push-action@v6
       with:
         context: .
@@ -68,6 +73,7 @@ runs:
           trivy-db-${{ inputs.trivy-version }}-
 
     - name: Trivy image vulnerability scan (post-ECR push)
+      id: trivy-scan
       uses: aquasecurity/trivy-action@v0.36.0
       with:
         version: ${{ inputs.trivy-version }}
@@ -77,7 +83,51 @@ runs:
         severity: ${{ inputs.severity }}
         scanners: vuln
         ignore-unfixed: true
-        exit-code: '1'
+        exit-code: '0'
+
+    - name: Trivy human-readable report
+      if: always()
+      uses: aquasecurity/trivy-action@v0.36.0
+      with:
+        version: ${{ inputs.trivy-version }}
+        image-ref: ${{ steps.meta.outputs.image-uri }}
+        format: table
+        severity: ${{ inputs.severity }}
+        scanners: vuln
+        ignore-unfixed: true
+        exit-code: '0'
+
+    - name: Trivy blocking gate and failure report
+      shell: bash
+      run: |
+        python3 scripts/trivy_gate.py \
+          --report trivy-image-results.json \
+          --severities "${{ inputs.severity }}" \
+          --image "${{ steps.meta.outputs.image-uri }}" \
+          --stage "Stage 4" \
+          --block-class "${{ inputs.trivy-block-class }}"
+
+    - name: Stage 4 failure summary (build/push)
+      if: failure() && steps.docker-build.outcome == 'failure'
+      shell: bash
+      run: |
+        python3 scripts/pipeline_fail.py \
+          --stage "Stage 4" \
+          --reason "Docker build or ECR push failed before Trivy scan." \
+          --hint "Check Dockerfile syntax and AWS ECR permissions (OIDC role)." \
+          --hint "Verify GitHub variables ECR_REGISTRY and ECR_REPOSITORY."
+
+    - name: Stage 4 failure summary (Trivy gate)
+      if: failure() && steps.docker-build.outcome == 'success'
+      shell: bash
+      run: |
+        python3 scripts/pipeline_fail.py \
+          --stage "Stage 4" \
+          --reason "Trivy gate failed — blocking HIGH/CRITICAL vulnerabilities found." \
+          --hint "Expand the 'Trivy blocking gate and failure report' step for the CVE list." \
+          --hint "Download artifact trivy-image-report for full JSON." \
+          --hint "Application CVEs: npm audit / dependency updates. OS CVEs: update base image digest."
+        exit 1
 
     - name: Trivy scan summary
       if: always()
@@ -90,5 +140,6 @@ runs:
           echo "|-------|-------|"
           echo "| Image | \`${{ steps.meta.outputs.image-uri }}\` |"
           echo "| Severity threshold | \`${{ inputs.severity }}\` |"
-          echo "| Scanners | vuln (OS + app packages) |"
+          echo "| Blocking class | \`${{ inputs.trivy-block-class }}\` |"
+          echo "| Scanners | vuln |"
         } >> "$GITHUB_STEP_SUMMARY"
