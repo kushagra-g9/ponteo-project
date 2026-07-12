@@ -15,6 +15,7 @@ EVENTS_BY_MODE: dict[str, set[str]] = {
     "off": set(),
     "minimal": {"stage_failed", "approval_required", "deploy_complete"},
     "recommended": {
+        "pr_started",
         "stage_passed",
         "stage_failed",
         "approval_required",
