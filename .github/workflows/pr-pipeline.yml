@@ -119,7 +119,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Sonar report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: sonar-report
@@ -128,7 +128,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: coverage-report
@@ -219,7 +219,7 @@ jobs:
           blocking: 'true'
 
       - name: Upload AI review artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ai-review-report
@@ -364,7 +364,7 @@ jobs:
             --marker "<!-- ponteo-test-validation-bot -->"
 
       - name: Upload test validation report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: test-validation-report
@@ -463,7 +463,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Upload Trivy image scan report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: trivy-image-report
