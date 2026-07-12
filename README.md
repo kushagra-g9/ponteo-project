@@ -163,7 +163,42 @@ BEDROCK_COST_MODE=smart
 AWS_ROLE_ARN=arn:aws:iam::YOUR_ACCOUNT_ID:role/github-actions-ponteo-project-ci
 SONAR_TOKEN=<token>
 SONAR_HOST_URL=https://sonarcloud.io
+GOOGLE_CHAT_WEBHOOK_URL=https://chat.googleapis.com/v1/spaces/.../messages?key=...&token=...
 ```
+
+---
+
+## Google Chat notifications (optional)
+
+Pipeline events can post to a Google Chat space via an **incoming webhook**.
+
+### Setup (Google Chat)
+
+1. Open your Google Chat **space** (team channel)
+2. Click the space name → **Apps & integrations** → **Manage webhooks**
+3. **Add webhook** → name it `Ponteo CI/CD` → copy the webhook URL
+4. Add the URL as GitHub secret **`GOOGLE_CHAT_WEBHOOK_URL`**
+
+### Notification modes (`GOOGLE_CHAT_NOTIFY_MODE` variable)
+
+| Mode | Events | Best for |
+|------|--------|----------|
+| **`recommended`** (default) | Stage failures, deploy approval needed, deploy complete | Production — actionable alerts only |
+| **`minimal`** | Same as recommended | Same noise level as recommended |
+| **`full`** | Above + PR started + merge gates passed | Demo / full visibility |
+| **`off`** | None | Disable without removing webhook secret |
+
+### What each notification means
+
+| Event | When it fires | Priority |
+|-------|---------------|----------|
+| **PR started** | Pipeline begins | Low (full mode only) |
+| **Merge gates passed** | Stages 1–4 succeed | Medium (full mode only) |
+| **Deploy approval required** | Stage 4 done — approve Stage 5 in Actions | **High — action needed** |
+| **Stage failed** | Any stage 1–6 fails | **Critical** |
+| **Deploy complete** | Stage 6 updated `argo-manifest` | High — success confirmation |
+
+If `GOOGLE_CHAT_WEBHOOK_URL` is not set, notifications are skipped silently.
 
 ---
 

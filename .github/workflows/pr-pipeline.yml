@@ -56,8 +56,32 @@ env:
   BEDROCK_TEST_MAX_OUTPUT_TOKENS: ${{ vars.BEDROCK_TEST_MAX_OUTPUT_TOKENS || '768' }}
   BEDROCK_COST_MODE: ${{ vars.BEDROCK_COST_MODE || 'smart' }}
   BEDROCK_SKIP_TEST_AI_ON_PASS: ${{ vars.BEDROCK_SKIP_TEST_AI_ON_PASS || 'false' }}
+  GOOGLE_CHAT_NOTIFY_MODE: ${{ vars.GOOGLE_CHAT_NOTIFY_MODE || 'recommended' }}
 
 jobs:
+  notify-pr-started:
+    name: 'Notify - PR pipeline started'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Google Chat — pipeline started
+        uses: ./.github/actions/google-chat-notify
+        with:
+          event-type: pr_started
+          webhook-url: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
+          notify-mode: ${{ env.GOOGLE_CHAT_NOTIFY_MODE }}
+          repository: ${{ github.repository }}
+          pr-number: ${{ github.event.pull_request.number }}
+          pr-title: ${{ github.event.pull_request.title }}
+          pr-url: ${{ github.event.pull_request.html_url }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          head-ref: ${{ github.head_ref }}
+          base-ref: ${{ github.base_ref }}
+          actor: ${{ github.actor }}
+
   stage-1-sonarqube:
     name: 'Stage 1 - SonarQube Scan'
     runs-on: ubuntu-latest
@@ -390,6 +414,49 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
+  notify-approval-required:
+    name: 'Notify - Deploy approval required'
+    runs-on: ubuntu-latest
+    needs: stage-4-docker-ecr
+    if: success()
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Google Chat — merge ready (optional)
+        uses: ./.github/actions/google-chat-notify
+        with:
+          event-type: merge_ready
+          webhook-url: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
+          notify-mode: ${{ env.GOOGLE_CHAT_NOTIFY_MODE }}
+          repository: ${{ github.repository }}
+          pr-number: ${{ github.event.pull_request.number }}
+          pr-title: ${{ github.event.pull_request.title }}
+          pr-url: ${{ github.event.pull_request.html_url }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          head-ref: ${{ github.head_ref }}
+          base-ref: ${{ github.base_ref }}
+          actor: ${{ github.actor }}
+          image-uri: ${{ needs.stage-4-docker-ecr.outputs.image-uri }}
+
+      - name: Google Chat — approval required
+        uses: ./.github/actions/google-chat-notify
+        with:
+          event-type: approval_required
+          webhook-url: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
+          notify-mode: ${{ env.GOOGLE_CHAT_NOTIFY_MODE }}
+          repository: ${{ github.repository }}
+          pr-number: ${{ github.event.pull_request.number }}
+          pr-title: ${{ github.event.pull_request.title }}
+          pr-url: ${{ github.event.pull_request.html_url }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          head-ref: ${{ github.head_ref }}
+          base-ref: ${{ github.base_ref }}
+          actor: ${{ github.actor }}
+          image-uri: ${{ needs.stage-4-docker-ecr.outputs.image-uri }}
+          environment: ${{ github.base_ref == 'main' && 'production' || 'staging' }}
+
   stage-5-approval:
     name: 'Stage 5 - Manual approval needed to deploy'
     runs-on: ubuntu-latest
@@ -540,3 +607,110 @@ jobs:
             echo "**Image:** \`${{ needs.stage-4-docker-ecr.outputs.image-uri }}\`"
             echo "**Manifest:** \`${{ env.MANIFEST_PATH }}\` on branch \`${{ env.MANIFEST_BRANCH }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  notify-pipeline-outcome:
+    name: 'Notify - Pipeline outcome'
+    runs-on: ubuntu-latest
+    needs:
+      - stage-1-sonarqube
+      - stage-2-ai-review
+      - stage-3-ai-tests
+      - stage-4-docker-ecr
+      - stage-5-approval
+      - stage-6-update-image-tag
+    if: always()
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine outcome and notify Google Chat
+        env:
+          S1: ${{ needs.stage-1-sonarqube.result }}
+          S2: ${{ needs.stage-2-ai-review.result }}
+          S3: ${{ needs.stage-3-ai-tests.result }}
+          S4: ${{ needs.stage-4-docker-ecr.result }}
+          S5: ${{ needs.stage-5-approval.result }}
+          S6: ${{ needs.stage-6-update-image-tag.result }}
+          WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
+          NOTIFY_MODE: ${{ env.GOOGLE_CHAT_NOTIFY_MODE }}
+          REPO: ${{ github.repository }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+          ACTOR: ${{ github.actor }}
+          IMAGE_URI: ${{ needs.stage-4-docker-ecr.outputs.image-uri }}
+          MANIFEST: ${{ env.MANIFEST_PATH }}
+        run: |
+          set -euo pipefail
+          if [ -z "${WEBHOOK}" ]; then
+            echo "Google Chat webhook not configured — skipping outcome notification."
+            exit 0
+          fi
+
+          notify_fail() {
+            local stage="$1"
+            local reason="$2"
+            python3 scripts/google_chat_notify.py \
+              --event-type stage_failed \
+              --webhook-url "${WEBHOOK}" \
+              --repository "${REPO}" \
+              --pr-number "${PR_NUM}" \
+              --pr-title "${PR_TITLE}" \
+              --pr-url "${PR_URL}" \
+              --run-url "${RUN_URL}" \
+              --head-ref "${HEAD_REF}" \
+              --base-ref "${BASE_REF}" \
+              --actor "${ACTOR}" \
+              --stage "${stage}" \
+              --reason "${reason}"
+          }
+
+          export GOOGLE_CHAT_NOTIFY_MODE="${NOTIFY_MODE}"
+
+          if [ "${S1}" = "failure" ]; then
+            notify_fail "Stage 1 - SonarQube Scan" "SonarQube quality gate or unit tests failed."
+            exit 0
+          fi
+          if [ "${S2}" = "failure" ]; then
+            notify_fail "Stage 2 - AI Code Review" "Bedrock AI code review failed or returned blocking verdict."
+            exit 0
+          fi
+          if [ "${S3}" = "failure" ]; then
+            notify_fail "Stage 3 - AI-Assisted Tests" "Unit tests or AI test validation failed."
+            exit 0
+          fi
+          if [ "${S4}" = "failure" ]; then
+            notify_fail "Stage 4 - Docker build + Trivy scan + push to ECR" "Docker build, Trivy gate, or ECR push failed."
+            exit 0
+          fi
+          if [ "${S5}" = "failure" ]; then
+            notify_fail "Stage 5 - Manual approval needed to deploy" "Deploy approval was rejected or timed out."
+            exit 0
+          fi
+          if [ "${S6}" = "failure" ]; then
+            notify_fail "Stage 6 - ArgoCD image tag update" "Failed to update manifest branch with new image tag."
+            exit 0
+          fi
+
+          if [ "${S6}" = "success" ]; then
+            python3 scripts/google_chat_notify.py \
+              --event-type deploy_complete \
+              --webhook-url "${WEBHOOK}" \
+              --repository "${REPO}" \
+              --pr-number "${PR_NUM}" \
+              --pr-title "${PR_TITLE}" \
+              --pr-url "${PR_URL}" \
+              --run-url "${RUN_URL}" \
+              --head-ref "${HEAD_REF}" \
+              --base-ref "${BASE_REF}" \
+              --actor "${ACTOR}" \
+              --image-uri "${IMAGE_URI}" \
+              --manifest-path "${MANIFEST}"
+            exit 0
+          fi
+
+          echo "No terminal outcome notification needed (pipeline may still be waiting for approval)."
