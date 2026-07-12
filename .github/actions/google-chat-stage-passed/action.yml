@@ -1,0 +1,133 @@
+name: Google Chat Stage Passed
+description: Notify Google Chat when a pipeline stage passes, with optional report summary
+
+inputs:
+  stage:
+    description: Stage display name
+    required: true
+  report-type:
+    description: none | sonar | trivy | ai-review | test-validation
+    required: false
+    default: none
+  webhook-url:
+    required: false
+    default: ''
+  notify-mode:
+    required: false
+    default: 'recommended'
+  repository:
+    required: false
+    default: ''
+  pr-number:
+    required: false
+    default: ''
+  pr-title:
+    required: false
+    default: ''
+  pr-url:
+    required: false
+    default: ''
+  run-url:
+    required: false
+    default: ''
+  head-ref:
+    required: false
+    default: ''
+  base-ref:
+    required: false
+    default: ''
+  actor:
+    required: false
+    default: ''
+  image-uri:
+    required: false
+    default: ''
+  sonar-host-url:
+    required: false
+    default: ''
+  sonar-token:
+    required: false
+    default: ''
+  sonar-project-key:
+    required: false
+    default: ''
+  sonar-organization:
+    required: false
+    default: ''
+  trivy-report:
+    required: false
+    default: 'trivy-image-results.json'
+  trivy-severities:
+    required: false
+    default: 'HIGH,CRITICAL'
+  trivy-block-class:
+    required: false
+    default: 'lang-pkgs'
+  report-path:
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Register secret masks in workflow logs
+      shell: bash
+      run: |
+        mask_if_set() {
+          local val="$1"
+          if [ -n "${val}" ]; then
+            echo "::add-mask::${val}"
+          fi
+        }
+        mask_if_set "${{ inputs.webhook-url }}"
+        mask_if_set "${{ inputs.sonar-token }}"
+
+    - name: Notify Google Chat — stage passed
+      shell: bash
+      env:
+        GOOGLE_CHAT_NOTIFY_MODE: ${{ inputs.notify-mode }}
+        GOOGLE_CHAT_WEBHOOK_URL: ${{ inputs.webhook-url }}
+        SONAR_HOST_URL: ${{ inputs.sonar-host-url }}
+        SONAR_TOKEN: ${{ inputs.sonar-token }}
+        SONAR_PROJECT_KEY: ${{ inputs.sonar-project-key }}
+        SONAR_ORGANIZATION: ${{ inputs.sonar-organization }}
+        TRIVY_REPORT: ${{ inputs.trivy-report }}
+        IMAGE_URI: ${{ inputs.image-uri }}
+        TRIVY_SEVERITIES: ${{ inputs.trivy-severities }}
+        TRIVY_BLOCK_CLASS: ${{ inputs.trivy-block-class }}
+        REPORT_PATH: ${{ inputs.report-path }}
+      run: |
+        set -euo pipefail
+        if [ -z "${GOOGLE_CHAT_WEBHOOK_URL}" ]; then
+          echo "Google Chat webhook not configured — skipping."
+          exit 0
+        fi
+
+        SUMMARY_FILE=""
+        if [ "${{ inputs.report-type }}" != "none" ]; then
+          chmod +x scripts/notify_stage_summary.sh
+          scripts/notify_stage_summary.sh "${{ inputs.report-type }}" > /tmp/chat-stage-summary.txt
+          SUMMARY_FILE="/tmp/chat-stage-summary.txt"
+        fi
+
+        ARGS=(
+          --event-type stage_passed
+          --repository "${{ inputs.repository }}"
+          --pr-number "${{ inputs.pr-number }}"
+          --pr-title "${{ inputs.pr-title }}"
+          --pr-url "${{ inputs.pr-url }}"
+          --run-url "${{ inputs.run-url }}"
+          --head-ref "${{ inputs.head-ref }}"
+          --base-ref "${{ inputs.base-ref }}"
+          --actor "${{ inputs.actor }}"
+          --stage "${{ inputs.stage }}"
+        )
+
+        if [ -n "${{ inputs.image-uri }}" ]; then
+          ARGS+=(--image-uri "${{ inputs.image-uri }}")
+        fi
+        if [ -n "${SUMMARY_FILE}" ] && [ -f "${SUMMARY_FILE}" ]; then
+          ARGS+=(--summary-lines-file "${SUMMARY_FILE}")
+        fi
+
+        python3 scripts/google_chat_notify.py "${ARGS[@]}"

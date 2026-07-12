@@ -8,7 +8,13 @@ const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const buildInfo = getBuildInfo();
 
-app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
+app.get('/health', (req, res) =>
+  res.status(200).json({
+    status: 'ok',
+    uptimeSeconds: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+  })
+);
 app.get('/ready', (req, res) =>
   res.status(200).json({ status: 'ready', version: buildInfo.version, gitSha: buildInfo.gitSha })
 );

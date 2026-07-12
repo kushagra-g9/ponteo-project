@@ -3,7 +3,7 @@ description: Post pipeline/PR notification to Google Chat incoming webhook
 
 inputs:
   event-type:
-    description: pr_started | stage_failed | merge_ready | approval_required | deploy_complete
+    description: pr_started | stage_passed | stage_failed | merge_ready | approval_required | deploy_complete
     required: true
   webhook-url:
     description: Google Chat incoming webhook URL (usually from secret)
@@ -48,6 +48,10 @@ inputs:
   environment:
     required: false
     default: ''
+  summary-lines-file:
+    description: Optional file with HTML summary lines (Sonar/Trivy/AI report excerpt)
+    required: false
+    default: ''
   notify-mode:
     description: off | minimal | recommended | full
     required: false
@@ -56,6 +60,17 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Register secret masks in workflow logs
+      shell: bash
+      run: |
+        mask_if_set() {
+          local val="$1"
+          if [ -n "${val}" ]; then
+            echo "::add-mask::${val}"
+          fi
+        }
+        mask_if_set "${{ inputs.webhook-url }}"
+
     - name: Send Google Chat notification
       shell: bash
       env:
@@ -63,14 +78,12 @@ runs:
         GOOGLE_CHAT_WEBHOOK_URL: ${{ inputs.webhook-url }}
       run: |
         set -euo pipefail
-        WEBHOOK="${GOOGLE_CHAT_WEBHOOK_URL}"
-        if [ -z "${WEBHOOK}" ]; then
+        if [ -z "${GOOGLE_CHAT_WEBHOOK_URL}" ]; then
           echo "Google Chat webhook not configured — skipping."
           exit 0
         fi
         python3 scripts/google_chat_notify.py \
           --event-type "${{ inputs.event-type }}" \
-          --webhook-url "${WEBHOOK}" \
           --repository "${{ inputs.repository }}" \
           --pr-number "${{ inputs.pr-number }}" \
           --pr-title "${{ inputs.pr-title }}" \
@@ -83,4 +96,5 @@ runs:
           --reason "${{ inputs.reason }}" \
           --image-uri "${{ inputs.image-uri }}" \
           --manifest-path "${{ inputs.manifest-path }}" \
-          --environment "${{ inputs.environment }}"
+          --environment "${{ inputs.environment }}" \
+          --summary-lines-file "${{ inputs.summary-lines-file }}"

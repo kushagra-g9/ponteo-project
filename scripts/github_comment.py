@@ -8,6 +8,8 @@ import sys
 
 import requests
 
+from secret_redaction import register_ci_secrets, register_secret, redact
+
 DEFAULT_MARKER = "<!-- ponteo-ai-review-bot -->"
 
 
@@ -41,17 +43,19 @@ def main() -> int:
     parser.add_argument("--repository", required=True)
     parser.add_argument("--marker", default=DEFAULT_MARKER, help="HTML comment marker to find/update")
     args = parser.parse_args()
+    register_ci_secrets()
 
     token = os.environ.get("GITHUB_TOKEN")
     if not token:
         print("GITHUB_TOKEN not set", file=sys.stderr)
         return 1
+    register_secret(token)
 
     if not os.path.isfile(args.report_path):
         print(f"Report not found: {args.report_path}", file=sys.stderr)
         return 1
 
-    report_body = open(args.report_path, encoding="utf-8").read()
+    report_body = redact(open(args.report_path, encoding="utf-8").read())
     body = f"{args.marker}\n{truncate_body(report_body)}"
 
     session = requests.Session()
