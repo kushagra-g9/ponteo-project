@@ -1,0 +1,86 @@
+name: Google Chat Notify
+description: Post pipeline/PR notification to Google Chat incoming webhook
+
+inputs:
+  event-type:
+    description: pr_started | stage_failed | merge_ready | approval_required | deploy_complete
+    required: true
+  webhook-url:
+    description: Google Chat incoming webhook URL (usually from secret)
+    required: false
+    default: ''
+  repository:
+    required: false
+    default: ''
+  pr-number:
+    required: false
+    default: ''
+  pr-title:
+    required: false
+    default: ''
+  pr-url:
+    required: false
+    default: ''
+  run-url:
+    required: false
+    default: ''
+  head-ref:
+    required: false
+    default: ''
+  base-ref:
+    required: false
+    default: ''
+  actor:
+    required: false
+    default: ''
+  stage:
+    required: false
+    default: ''
+  reason:
+    required: false
+    default: ''
+  image-uri:
+    required: false
+    default: ''
+  manifest-path:
+    required: false
+    default: ''
+  environment:
+    required: false
+    default: ''
+  notify-mode:
+    description: off | minimal | recommended | full
+    required: false
+    default: 'recommended'
+
+runs:
+  using: composite
+  steps:
+    - name: Send Google Chat notification
+      shell: bash
+      env:
+        GOOGLE_CHAT_NOTIFY_MODE: ${{ inputs.notify-mode }}
+        GOOGLE_CHAT_WEBHOOK_URL: ${{ inputs.webhook-url }}
+      run: |
+        set -euo pipefail
+        WEBHOOK="${GOOGLE_CHAT_WEBHOOK_URL}"
+        if [ -z "${WEBHOOK}" ]; then
+          echo "Google Chat webhook not configured — skipping."
+          exit 0
+        fi
+        python3 scripts/google_chat_notify.py \
+          --event-type "${{ inputs.event-type }}" \
+          --webhook-url "${WEBHOOK}" \
+          --repository "${{ inputs.repository }}" \
+          --pr-number "${{ inputs.pr-number }}" \
+          --pr-title "${{ inputs.pr-title }}" \
+          --pr-url "${{ inputs.pr-url }}" \
+          --run-url "${{ inputs.run-url }}" \
+          --head-ref "${{ inputs.head-ref }}" \
+          --base-ref "${{ inputs.base-ref }}" \
+          --actor "${{ inputs.actor }}" \
+          --stage "${{ inputs.stage }}" \
+          --reason "${{ inputs.reason }}" \
+          --image-uri "${{ inputs.image-uri }}" \
+          --manifest-path "${{ inputs.manifest-path }}" \
+          --environment "${{ inputs.environment }}"
