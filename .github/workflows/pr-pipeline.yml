@@ -138,6 +138,27 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
+      - name: Google Chat — Stage 1 passed (Sonar report)
+        if: success()
+        uses: ./.github/actions/google-chat-stage-passed
+        with:
+          stage: 'Stage 1 - SonarQube Scan'
+          report-type: sonar
+          webhook-url: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
+          notify-mode: ${{ env.GOOGLE_CHAT_NOTIFY_MODE }}
+          repository: ${{ github.repository }}
+          pr-number: ${{ github.event.pull_request.number }}
+          pr-title: ${{ github.event.pull_request.title }}
+          pr-url: ${{ github.event.pull_request.html_url }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          head-ref: ${{ github.head_ref }}
+          base-ref: ${{ github.base_ref }}
+          actor: ${{ github.actor }}
+          sonar-host-url: ${{ secrets.SONAR_HOST_URL }}
+          sonar-token: ${{ secrets.SONAR_TOKEN }}
+          sonar-project-key: ${{ vars.SONAR_PROJECT_KEY }}
+          sonar-organization: ${{ env.SONAR_ORGANIZATION }}
+
       - name: Stage 1 failure summary
         if: failure()
         run: |
@@ -216,6 +237,24 @@ jobs:
             --report-path artifacts/ai-review.md \
             --repository "${{ github.repository }}" \
             --marker "<!-- ponteo-ai-review-bot -->"
+
+      - name: Google Chat — Stage 2 passed (AI review report)
+        if: success()
+        uses: ./.github/actions/google-chat-stage-passed
+        with:
+          stage: 'Stage 2 - AI Code Review'
+          report-type: ai-review
+          report-path: artifacts/ai-review.md
+          webhook-url: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
+          notify-mode: ${{ env.GOOGLE_CHAT_NOTIFY_MODE }}
+          repository: ${{ github.repository }}
+          pr-number: ${{ github.event.pull_request.number }}
+          pr-title: ${{ github.event.pull_request.title }}
+          pr-url: ${{ github.event.pull_request.html_url }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          head-ref: ${{ github.head_ref }}
+          base-ref: ${{ github.base_ref }}
+          actor: ${{ github.actor }}
 
       - name: Stage 2 failure summary
         if: failure()
@@ -363,6 +402,24 @@ jobs:
           fi
           echo "Stage 3 PASSED: tests and AI validation succeeded."
 
+      - name: Google Chat — Stage 3 passed (test validation report)
+        if: success()
+        uses: ./.github/actions/google-chat-stage-passed
+        with:
+          stage: 'Stage 3 - AI-Assisted Tests'
+          report-type: test-validation
+          report-path: artifacts/test-validation.md
+          webhook-url: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
+          notify-mode: ${{ env.GOOGLE_CHAT_NOTIFY_MODE }}
+          repository: ${{ github.repository }}
+          pr-number: ${{ github.event.pull_request.number }}
+          pr-title: ${{ github.event.pull_request.title }}
+          pr-url: ${{ github.event.pull_request.html_url }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          head-ref: ${{ github.head_ref }}
+          base-ref: ${{ github.base_ref }}
+          actor: ${{ github.actor }}
+
   stage-4-docker-ecr:
     name: 'Stage 4 - Docker build + Trivy scan + push to ECR'
     runs-on: ubuntu-latest
@@ -413,6 +470,27 @@ jobs:
           path: trivy-image-results.json
           retention-days: 14
           if-no-files-found: ignore
+
+      - name: Google Chat — Stage 4 passed (Trivy report)
+        if: success()
+        uses: ./.github/actions/google-chat-stage-passed
+        with:
+          stage: 'Stage 4 - Docker build + Trivy scan + push to ECR'
+          report-type: trivy
+          webhook-url: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
+          notify-mode: ${{ env.GOOGLE_CHAT_NOTIFY_MODE }}
+          repository: ${{ github.repository }}
+          pr-number: ${{ github.event.pull_request.number }}
+          pr-title: ${{ github.event.pull_request.title }}
+          pr-url: ${{ github.event.pull_request.html_url }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          head-ref: ${{ github.head_ref }}
+          base-ref: ${{ github.base_ref }}
+          actor: ${{ github.actor }}
+          image-uri: ${{ steps.build.outputs.image-uri }}
+          trivy-report: trivy-image-results.json
+          trivy-severities: 'HIGH,CRITICAL'
+          trivy-block-class: ${{ env.TRIVY_BLOCK_CLASS }}
 
   notify-approval-required:
     name: 'Notify - Deploy approval required'
@@ -470,6 +548,24 @@ jobs:
           echo "Deployment approved by: ${{ github.actor }}"
           echo "Environment: ${{ github.base_ref == 'main' && 'production' || 'staging' }}"
           echo "Image: ${{ needs.stage-4-docker-ecr.outputs.image-uri }}"
+
+      - name: Google Chat — Stage 5 passed (deploy approved)
+        if: success()
+        uses: ./.github/actions/google-chat-stage-passed
+        with:
+          stage: 'Stage 5 - Manual approval needed to deploy'
+          report-type: none
+          webhook-url: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
+          notify-mode: ${{ env.GOOGLE_CHAT_NOTIFY_MODE }}
+          repository: ${{ github.repository }}
+          pr-number: ${{ github.event.pull_request.number }}
+          pr-title: ${{ github.event.pull_request.title }}
+          pr-url: ${{ github.event.pull_request.html_url }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          head-ref: ${{ github.head_ref }}
+          base-ref: ${{ github.base_ref }}
+          actor: ${{ github.actor }}
+          image-uri: ${{ needs.stage-4-docker-ecr.outputs.image-uri }}
 
   stage-6-update-image-tag:
     name: 'Stage 6 - ArgoCD image tag update'
@@ -588,6 +684,24 @@ jobs:
         if: env.GITOPS_REPO != ''
         working-directory: gitops
         run: git push origin HEAD
+
+      - name: Google Chat — Stage 6 passed (manifest updated)
+        if: success()
+        uses: ./.github/actions/google-chat-stage-passed
+        with:
+          stage: 'Stage 6 - ArgoCD image tag update'
+          report-type: none
+          webhook-url: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
+          notify-mode: ${{ env.GOOGLE_CHAT_NOTIFY_MODE }}
+          repository: ${{ github.repository }}
+          pr-number: ${{ github.event.pull_request.number }}
+          pr-title: ${{ github.event.pull_request.title }}
+          pr-url: ${{ github.event.pull_request.html_url }}
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          head-ref: ${{ github.head_ref }}
+          base-ref: ${{ github.base_ref }}
+          actor: ${{ github.actor }}
+          image-uri: ${{ needs.stage-4-docker-ecr.outputs.image-uri }}
 
       - name: Pipeline summary
         run: |

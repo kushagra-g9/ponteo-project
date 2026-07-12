@@ -8,13 +8,26 @@ import os
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 # Event types and which notify modes include them
 EVENTS_BY_MODE: dict[str, set[str]] = {
     "off": set(),
     "minimal": {"stage_failed", "approval_required", "deploy_complete"},
-    "recommended": {"stage_failed", "approval_required", "deploy_complete"},
-    "full": {"pr_started", "stage_failed", "merge_ready", "approval_required", "deploy_complete"},
+    "recommended": {
+        "stage_passed",
+        "stage_failed",
+        "approval_required",
+        "deploy_complete",
+    },
+    "full": {
+        "pr_started",
+        "stage_passed",
+        "stage_failed",
+        "merge_ready",
+        "approval_required",
+        "deploy_complete",
+    },
 }
 
 STATUS_ICON = {
@@ -92,6 +105,15 @@ def post_webhook(webhook_url: str, payload: dict) -> None:
             raise RuntimeError(f"Google Chat webhook returned HTTP {resp.status}")
 
 
+def load_summary_lines(path: str | None) -> list[str]:
+    if not path:
+        return []
+    summary_path = Path(path)
+    if not summary_path.exists():
+        return []
+    return [line.rstrip("\n") for line in summary_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
 def compose_payload(args: argparse.Namespace) -> dict:
     repo = args.repository or "unknown/repo"
     pr = args.pr_number or "?"
@@ -114,6 +136,28 @@ def compose_payload(args: argparse.Namespace) -> dict:
             ],
             button_label="View PR",
             button_url=pr_url,
+        )
+
+    if args.event_type == "stage_passed":
+        summary = load_summary_lines(args.summary_lines_file)
+        lines = [
+            f"<b>Stage:</b> {args.stage or 'Unknown'}",
+            f"<b>Status:</b> PASSED ✅",
+            f"<b>PR:</b> #{pr} — {args.pr_title or 'Untitled'}",
+            f"<b>Branch:</b> {branch} → {base}",
+        ]
+        if args.image_uri:
+            lines.append(f"<b>Image:</b> {args.image_uri}")
+        if summary:
+            lines.append("")
+            lines.extend(summary)
+        return build_card(
+            title=f"Stage passed — {args.stage or 'Pipeline stage'}",
+            subtitle=f"{repo} · PR #{pr}",
+            status="success",
+            lines=lines,
+            button_label="View workflow run",
+            button_url=run_url,
         )
 
     if args.event_type == "stage_failed":
@@ -196,6 +240,7 @@ def main() -> int:
     parser.add_argument("--image-uri")
     parser.add_argument("--manifest-path")
     parser.add_argument("--environment")
+    parser.add_argument("--summary-lines-file", help="File with HTML summary lines (one per line)")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 

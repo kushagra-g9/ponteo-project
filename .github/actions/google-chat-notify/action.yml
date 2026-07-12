@@ -3,7 +3,7 @@ description: Post pipeline/PR notification to Google Chat incoming webhook
 
 inputs:
   event-type:
-    description: pr_started | stage_failed | merge_ready | approval_required | deploy_complete
+    description: pr_started | stage_passed | stage_failed | merge_ready | approval_required | deploy_complete
     required: true
   webhook-url:
     description: Google Chat incoming webhook URL (usually from secret)
@@ -48,6 +48,10 @@ inputs:
   environment:
     required: false
     default: ''
+  summary-lines-file:
+    description: Optional file with HTML summary lines (Sonar/Trivy/AI report excerpt)
+    required: false
+    default: ''
   notify-mode:
     description: off | minimal | recommended | full
     required: false
@@ -83,4 +87,5 @@ runs:
           --reason "${{ inputs.reason }}" \
           --image-uri "${{ inputs.image-uri }}" \
           --manifest-path "${{ inputs.manifest-path }}" \
-          --environment "${{ inputs.environment }}"
+          --environment "${{ inputs.environment }}" \
+          --summary-lines-file "${{ inputs.summary-lines-file }}"

@@ -183,15 +183,27 @@ Pipeline events can post to a Google Chat space via an **incoming webhook**.
 
 | Mode | Events | Best for |
 |------|--------|----------|
-| **`recommended`** (default) | Stage failures, deploy approval needed, deploy complete | Production — actionable alerts only |
-| **`minimal`** | Same as recommended | Same noise level as recommended |
-| **`full`** | Above + PR started + merge gates passed | Demo / full visibility |
+| **`recommended`** (default) | Stage-wise pass (with reports), failures, deploy approval, deploy complete | Production — Sonar/Trivy/AI summaries per stage |
+| **`minimal`** | Failures, deploy approval, deploy complete only | Quiet — no per-stage pass cards |
+| **`full`** | Above + PR started + merge gates passed | Demo / full audit trail |
 | **`off`** | None | Disable without removing webhook secret |
+
+### Stage-wise report cards (recommended mode)
+
+| Stage | Google Chat card includes |
+|-------|---------------------------|
+| 1 — SonarQube | Quality gate, coverage, bugs, vulnerabilities, code smells |
+| 2 — AI Code Review | Score, verdict, Security/Performance/Maintainability summary |
+| 3 — AI-Assisted Tests | Test verdict, regression risks, coverage gaps |
+| 4 — Trivy | CVE counts, blocking findings, OS-layer (informational) |
+| 5 — Deploy approval | Approval recorded + image URI |
+| 6 — ArgoCD update | Manifest updated + image URI |
 
 ### What each notification means
 
 | Event | When it fires | Priority |
 |-------|---------------|----------|
+| **Stage passed** | Each stage 1–6 succeeds | Medium — includes report excerpt |
 | **PR started** | Pipeline begins | Low (full mode only) |
 | **Merge gates passed** | Stages 1–4 succeed | Medium (full mode only) |
 | **Deploy approval required** | Stage 4 done — approve Stage 5 in Actions | **High — action needed** |
