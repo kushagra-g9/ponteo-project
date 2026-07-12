@@ -4,10 +4,13 @@ const request = require('supertest');
 const { app } = require('../src/index');
 
 describe('ponteo-project API', () => {
-  test('GET /health returns 200', async () => {
+  test('GET /health returns 200 with uptime metadata', async () => {
     const res = await request(app).get('/health');
     expect(res.statusCode).toBe(200);
     expect(res.body.status).toBe('ok');
+    expect(typeof res.body.uptimeSeconds).toBe('number');
+    expect(res.body.uptimeSeconds).toBeGreaterThanOrEqual(0);
+    expect(res.body.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
   test('GET /ready returns 200', async () => {
