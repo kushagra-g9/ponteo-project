@@ -9,7 +9,6 @@ case "${TYPE}" in
   sonar)
     python3 scripts/report_summary.py --type sonar \
       --sonar-host "${SONAR_HOST_URL:-}" \
-      --sonar-token "${SONAR_TOKEN:-}" \
       --sonar-project-key "${SONAR_PROJECT_KEY:-}" \
       --sonar-organization "${SONAR_ORGANIZATION:-}" \
       --coverage-dir "${COVERAGE_DIR:-coverage}" \

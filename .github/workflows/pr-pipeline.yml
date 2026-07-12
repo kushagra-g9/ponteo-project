@@ -752,6 +752,7 @@ jobs:
           S5: ${{ needs.stage-5-approval.result }}
           S6: ${{ needs.stage-6-update-image-tag.result }}
           WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
+          GOOGLE_CHAT_WEBHOOK_URL: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
           NOTIFY_MODE: ${{ env.GOOGLE_CHAT_NOTIFY_MODE }}
           REPO: ${{ github.repository }}
           PR_NUM: ${{ github.event.pull_request.number }}
@@ -765,7 +766,7 @@ jobs:
           MANIFEST: ${{ env.MANIFEST_PATH }}
         run: |
           set -euo pipefail
-          if [ -z "${WEBHOOK}" ]; then
+          if [ -z "${GOOGLE_CHAT_WEBHOOK_URL}" ]; then
             echo "Google Chat webhook not configured — skipping outcome notification."
             exit 0
           fi
@@ -775,7 +776,6 @@ jobs:
             local reason="$2"
             python3 scripts/google_chat_notify.py \
               --event-type stage_failed \
-              --webhook-url "${WEBHOOK}" \
               --repository "${REPO}" \
               --pr-number "${PR_NUM}" \
               --pr-title "${PR_TITLE}" \
@@ -818,7 +818,6 @@ jobs:
           if [ "${S6}" = "success" ]; then
             python3 scripts/google_chat_notify.py \
               --event-type deploy_complete \
-              --webhook-url "${WEBHOOK}" \
               --repository "${REPO}" \
               --pr-number "${PR_NUM}" \
               --pr-title "${PR_TITLE}" \

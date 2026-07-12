@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import urllib.error
@@ -11,6 +12,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from secret_redaction import register_ci_secrets, register_secret, redact
 from trivy_gate import filter_findings, load_vulnerabilities, parse_severities
 
 
@@ -106,7 +108,7 @@ def sonar_summary_lines(
     except urllib.error.HTTPError as exc:
         lines.append(f"Quality gate API unavailable (HTTP {exc.code}).")
     except Exception as exc:
-        lines.append(f"Quality gate lookup failed: {exc}")
+        lines.append(f"Quality gate lookup failed: {redact(str(exc))}")
 
     try:
         measures = sonar_measures(host, token, project_key, organization)
@@ -192,7 +194,7 @@ def ai_review_summary_lines(report_path: Path) -> list[str]:
         lines.append("Report not available.")
         return lines
 
-    text = report_path.read_text(encoding="utf-8", errors="replace")
+    text = redact(report_path.read_text(encoding="utf-8", errors="replace"))
     score = re.search(r"Overall Score\s*\(?(\d+/10)\)?", text, re.IGNORECASE)
     verdict = re.search(r"\*\*(PASS|FAIL)\*\*", text)
     if score:
@@ -212,7 +214,7 @@ def ai_review_summary_lines(report_path: Path) -> list[str]:
 
     excerpt = truncate(re.sub(r"[#*`]", "", markdown_section(text, "Summary") or text), 400)
     if excerpt:
-        lines.append(f"<b>Summary:</b> {html_escape(excerpt)}")
+        lines.append(f"<b>Summary:</b> {html_escape(redact(excerpt))}")
     return lines
 
 
@@ -222,7 +224,7 @@ def test_validation_summary_lines(report_path: Path) -> list[str]:
         lines.append("Report not available.")
         return lines
 
-    text = report_path.read_text(encoding="utf-8", errors="replace")
+    text = redact(report_path.read_text(encoding="utf-8", errors="replace"))
     verdict = re.search(r"\*\*(PASS|FAIL)\*\*", text)
     if verdict:
         lines.append(f"<b>Verdict:</b> {verdict.group(1)}")
@@ -240,7 +242,7 @@ def test_validation_summary_lines(report_path: Path) -> list[str]:
         if bullets:
             lines.append(f"<b>{section}:</b>")
             for bullet in bullets[:3]:
-                lines.append(f"• {html_escape(bullet[:200])}")
+                lines.append(f"• {html_escape(redact(bullet[:200]))}")
 
     return lines
 
@@ -253,7 +255,6 @@ def main() -> int:
         choices=["sonar", "trivy", "ai-review", "test-validation"],
     )
     parser.add_argument("--sonar-host", default="")
-    parser.add_argument("--sonar-token", default="")
     parser.add_argument("--sonar-project-key", default="")
     parser.add_argument("--sonar-organization", default="")
     parser.add_argument("--coverage-dir", default="coverage")
@@ -263,11 +264,14 @@ def main() -> int:
     parser.add_argument("--block-class", default="lang-pkgs")
     parser.add_argument("--report-path", default="")
     args = parser.parse_args()
+    register_ci_secrets()
+    sonar_token = os.environ.get("SONAR_TOKEN", "")
+    register_secret(sonar_token)
 
     if args.type == "sonar":
         summary = sonar_summary_lines(
             host=args.sonar_host,
-            token=args.sonar_token,
+            token=sonar_token,
             project_key=args.sonar_project_key,
             organization=args.sonar_organization,
             coverage_dir=Path(args.coverage_dir),
@@ -287,7 +291,7 @@ def main() -> int:
         )
 
     for line in summary:
-        print(line)
+        print(redact(line))
     return 0
 
 

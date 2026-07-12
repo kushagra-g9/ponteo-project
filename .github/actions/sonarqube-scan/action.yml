@@ -34,6 +34,13 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Register Sonar token mask in workflow logs
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.sonar-token }}" ]; then
+          echo "::add-mask::${{ inputs.sonar-token }}"
+        fi
+
     - name: Cache SonarQube scanner
       uses: actions/cache@v4
       with:

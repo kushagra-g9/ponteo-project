@@ -60,6 +60,17 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Register secret masks in workflow logs
+      shell: bash
+      run: |
+        mask_if_set() {
+          local val="$1"
+          if [ -n "${val}" ]; then
+            echo "::add-mask::${val}"
+          fi
+        }
+        mask_if_set "${{ inputs.webhook-url }}"
+
     - name: Send Google Chat notification
       shell: bash
       env:
@@ -67,14 +78,12 @@ runs:
         GOOGLE_CHAT_WEBHOOK_URL: ${{ inputs.webhook-url }}
       run: |
         set -euo pipefail
-        WEBHOOK="${GOOGLE_CHAT_WEBHOOK_URL}"
-        if [ -z "${WEBHOOK}" ]; then
+        if [ -z "${GOOGLE_CHAT_WEBHOOK_URL}" ]; then
           echo "Google Chat webhook not configured — skipping."
           exit 0
         fi
         python3 scripts/google_chat_notify.py \
           --event-type "${{ inputs.event-type }}" \
-          --webhook-url "${WEBHOOK}" \
           --repository "${{ inputs.repository }}" \
           --pr-number "${{ inputs.pr-number }}" \
           --pr-title "${{ inputs.pr-title }}" \

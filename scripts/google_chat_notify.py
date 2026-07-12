@@ -10,6 +10,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from secret_redaction import register_ci_secrets, register_secret, redact
+
 # Event types and which notify modes include them
 EVENTS_BY_MODE: dict[str, set[str]] = {
     "off": set(),
@@ -112,7 +114,7 @@ def load_summary_lines(path: str | None) -> list[str]:
     summary_path = Path(path)
     if not summary_path.exists():
         return []
-    return [line.rstrip("\n") for line in summary_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [redact(line.rstrip("\n")) for line in summary_path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 def compose_payload(args: argparse.Namespace) -> dict:
@@ -168,7 +170,7 @@ def compose_payload(args: argparse.Namespace) -> dict:
             status="failure",
             lines=[
                 f"<b>Stage:</b> {args.stage or 'Unknown'}",
-                f"<b>Reason:</b> {args.reason or 'See GitHub Actions logs.'}",
+                f"<b>Reason:</b> {redact(args.reason or 'See GitHub Actions logs.')}",
                 f"<b>Branch:</b> {branch} → {base}",
                 f"<b>Triggered by:</b> {actor}",
             ],
@@ -227,7 +229,11 @@ def compose_payload(args: argparse.Namespace) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Send Ponteo pipeline notification to Google Chat.")
     parser.add_argument("--event-type", required=True, choices=sorted(EVENTS_BY_MODE["full"]))
-    parser.add_argument("--webhook-url", default=os.environ.get("GOOGLE_CHAT_WEBHOOK_URL", ""))
+    parser.add_argument(
+        "--webhook-url",
+        default="",
+        help="Deprecated: use GOOGLE_CHAT_WEBHOOK_URL env var (avoids argv exposure).",
+    )
     parser.add_argument("--repository")
     parser.add_argument("--pr-number")
     parser.add_argument("--pr-title")
@@ -244,13 +250,16 @@ def main() -> int:
     parser.add_argument("--summary-lines-file", help="File with HTML summary lines (one per line)")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+    register_ci_secrets()
+
+    webhook = (args.webhook_url or os.environ.get("GOOGLE_CHAT_WEBHOOK_URL", "")).strip()
+    register_secret(webhook)
 
     if not mode_allows(args.event_type):
         print(f"Google Chat skipped: event '{args.event_type}' not enabled for mode "
               f"'{os.environ.get('GOOGLE_CHAT_NOTIFY_MODE', 'recommended')}'")
         return 0
 
-    webhook = (args.webhook_url or "").strip()
     if not webhook:
         print("Google Chat skipped: GOOGLE_CHAT_WEBHOOK_URL not configured.")
         return 0
@@ -263,11 +272,11 @@ def main() -> int:
     try:
         post_webhook(webhook, payload)
     except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
+        body = redact(exc.read().decode("utf-8", errors="replace"))
         print(f"Google Chat webhook failed: HTTP {exc.code} {body}", file=sys.stderr)
         return 1
     except Exception as exc:
-        print(f"Google Chat webhook failed: {exc}", file=sys.stderr)
+        print(f"Google Chat webhook failed: {redact(str(exc))}", file=sys.stderr)
         return 1
 
     print(f"Google Chat notification sent: {args.event_type}")

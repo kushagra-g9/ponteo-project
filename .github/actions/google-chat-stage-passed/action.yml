@@ -70,6 +70,18 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Register secret masks in workflow logs
+      shell: bash
+      run: |
+        mask_if_set() {
+          local val="$1"
+          if [ -n "${val}" ]; then
+            echo "::add-mask::${val}"
+          fi
+        }
+        mask_if_set "${{ inputs.webhook-url }}"
+        mask_if_set "${{ inputs.sonar-token }}"
+
     - name: Notify Google Chat — stage passed
       shell: bash
       env:
@@ -100,7 +112,6 @@ runs:
 
         ARGS=(
           --event-type stage_passed
-          --webhook-url "${GOOGLE_CHAT_WEBHOOK_URL}"
           --repository "${{ inputs.repository }}"
           --pr-number "${{ inputs.pr-number }}"
           --pr-title "${{ inputs.pr-title }}"
