@@ -543,6 +543,9 @@ jobs:
       name: ${{ github.base_ref == 'main' && 'production' || 'staging' }}
     timeout-minutes: 1440
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Record approval
         run: |
           echo "Deployment approved by: ${{ github.actor }}"
@@ -551,6 +554,7 @@ jobs:
 
       - name: Google Chat — Stage 5 passed (deploy approved)
         if: success()
+        continue-on-error: true
         uses: ./.github/actions/google-chat-stage-passed
         with:
           stage: 'Stage 5 - Manual approval needed to deploy'
@@ -687,6 +691,7 @@ jobs:
 
       - name: Google Chat — Stage 6 passed (manifest updated)
         if: success()
+        continue-on-error: true
         uses: ./.github/actions/google-chat-stage-passed
         with:
           stage: 'Stage 6 - ArgoCD image tag update'
