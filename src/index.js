@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const _ = require('lodash');
 const { sum } = require('./sum');
 const { getBuildInfo } = require('./version');
 
@@ -13,6 +14,7 @@ app.get('/health', (req, res) =>
     status: 'ok',
     uptimeSeconds: Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
+    lodashVersion: _.VERSION,
   })
 );
 app.get('/ready', (req, res) =>
