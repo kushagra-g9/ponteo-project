@@ -42,8 +42,8 @@ PR opened
 
 | Resource | Link |
 |----------|------|
-| Repository | https://github.com/kushagra-g9/ponteo-project |
-| GitHub Actions | https://github.com/kushagra-g9/ponteo-project/actions |
+| Repository | `https://github.com/YOUR_ORG/ponteo-project` |
+| GitHub Actions | `https://github.com/YOUR_ORG/ponteo-project/actions` |
 | Workflow | `.github/workflows/pr-pipeline.yml` |
 | Application README | [../README.md](../README.md) |
 

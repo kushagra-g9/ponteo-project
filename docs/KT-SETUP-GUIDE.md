@@ -8,8 +8,10 @@ order: 5
 
 **Document type:** Knowledge Transfer / Handover  
 **Audience:** Developers, DevOps engineers, platform owners  
-**Repository:** `kushagra-g9/ponteo-project` (demo) → client production account  
+**Repository:** `YOUR_ORG/ponteo-project` (replace with your GitHub org/user and repo name)  
 **Last updated:** July 2026  
+
+> **Security note:** Do not commit real AWS account IDs, IAM role ARNs, ECR registry URLs, tokens, or webhook URLs in documentation. Use placeholders and store values in GitHub Secrets/Variables only.
 
 ---
 
@@ -293,7 +295,7 @@ Quality gate is enforced in Stage 1 (`sonar.qualitygate.wait=true`).
 | Variable | Example value | Required |
 |----------|---------------|----------|
 | `AWS_REGION` | `us-east-1` | Yes |
-| `ECR_REGISTRY` | `514201996443.dkr.ecr.us-east-1.amazonaws.com` | Yes |
+| `ECR_REGISTRY` | `YOUR_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com` | Yes |
 | `ECR_REPOSITORY` | `ponteo/ponteo-project` | Yes |
 | `SERVICE_NAME` | `ponteo-project` | Yes |
 | `SONAR_PROJECT_KEY` | your SonarCloud project key | Yes |
@@ -319,7 +321,7 @@ Quality gate is enforced in Stage 1 (`sonar.qualitygate.wait=true`).
 
 | Secret | Value |
 |--------|-------|
-| `AWS_ROLE_ARN` | `arn:aws:iam::ACCOUNT:role/github-actions-ponteo-project-ci` |
+| `AWS_ROLE_ARN` | `arn:aws:iam::YOUR_ACCOUNT_ID:role/github-actions-ponteo-project-ci` |
 | `SONAR_TOKEN` | SonarCloud token |
 | `SONAR_HOST_URL` | `https://sonarcloud.io` |
 
@@ -354,7 +356,9 @@ Merge to `main` is blocked until required checks pass.
 #### Option A — Script (recommended)
 
 ```bash
-export GITHUB_TOKEN=ghp_your_admin_token
+export GITHUB_OWNER=your_github_user
+export GITHUB_REPO=ponteo-project
+export GITHUB_TOKEN=<your-admin-token>
 python3 scripts/setup_branch_protection.py
 ```
 
@@ -564,14 +568,18 @@ One pipeline run per PR number; newer pushes cancel in-progress runs.
 
 ## 8. AWS configuration reference
 
-### Demo account (reference)
+Use your own account values from IAM and ECR. **Do not paste live account IDs or ARNs into docs.**
 
-| Setting | Value |
-|---------|-------|
-| AWS Account | `514201996443` |
-| Region | `us-east-1` |
-| ECR repo | `ponteo/ponteo-project` |
-| IAM role | `github-actions-ponteo-project-ci` |
+### Configuration template
+
+| Setting | Placeholder / example |
+|---------|------------------------|
+| AWS Account | `YOUR_ACCOUNT_ID` |
+| Region | `us-east-1` (or your chosen region) |
+| ECR registry | `YOUR_ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com` |
+| ECR repository | `ponteo/ponteo-project` (or your naming standard) |
+| IAM role name | `github-actions-ponteo-project-ci` |
+| IAM role ARN | `arn:aws:iam::YOUR_ACCOUNT_ID:role/github-actions-ponteo-project-ci` |
 
 ### Verify ECR images after Stage 4
 
@@ -589,7 +597,7 @@ Set at Docker build time via CI:
 
 | Env var | Source |
 |---------|--------|
-| `VERSION` | Image tag (e.g. `pr-13-abc123`) |
+| `VERSION` | Image tag (e.g. `pr-42-abc123def456`) |
 | `VCS_REF` | Git commit SHA |
 | `BUILD_DATE` | Build timestamp |
 
@@ -644,11 +652,11 @@ sequenceDiagram
 Example commit on `argo-manifest`:
 
 ```
-ci(pr-13): update image tag pr-13-854432686481
+ci(pr-42): update image tag pr-42-abc123def456
 
-PR: kushagra-g9/ponteo-project#13
-SHA: ...
-Approved by: your-github-user
+PR: YOUR_ORG/ponteo-project#42
+SHA: <commit-sha>
+Approved by: <github-username>
 Updated: argo-manifest/deployment.yaml (image field only)
 ```
 
@@ -718,7 +726,7 @@ When moving from personal demo to client production:
 | GitHub runner | `ubuntu-latest` | `[self-hosted, linux, x64]` (if required) |
 | Repository | Personal account | Client org/repo |
 | AWS account | Personal | Client AWS account |
-| IAM OIDC `sub` | `kushagra-g9/ponteo-project` | Client org/repo paths |
+| IAM OIDC `sub` | `YOUR_ORG/ponteo-project` | Client org/repo paths |
 | ECR path | `ponteo/ponteo-project` | Client naming standard |
 | SonarCloud | Personal org | Client SonarCloud org |
 | Environments | Solo reviewer | Team approval matrix |
@@ -766,8 +774,8 @@ Use this when transferring ownership to a new team member.
 
 | Resource | URL |
 |----------|-----|
-| Repository | https://github.com/kushagra-g9/ponteo-project |
-| Actions | https://github.com/kushagra-g9/ponteo-project/actions |
+| Repository | `https://github.com/YOUR_ORG/ponteo-project` |
+| Actions | `https://github.com/YOUR_ORG/ponteo-project/actions` |
 | Workflow file | `.github/workflows/pr-pipeline.yml` |
 | Branch protection script | `scripts/setup_branch_protection.py` |
 | SonarCloud | https://sonarcloud.io |

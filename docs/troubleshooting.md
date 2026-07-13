@@ -123,7 +123,8 @@ aws ecr describe-images \
 npm ci && npm test
 
 # Apply branch protection
-export GITHUB_TOKEN=ghp_...
+export GITHUB_OWNER=your_github_user
+export GITHUB_TOKEN=<your-admin-token>
 python3 scripts/setup_branch_protection.py
 ```
 
