@@ -18,8 +18,22 @@ import sys
 import urllib.error
 import urllib.request
 
-OWNER = os.environ.get("GITHUB_OWNER", "kushagra-g9")
-REPO = os.environ.get("GITHUB_REPO", "ponteo-project")
+def _resolve_owner_repo() -> tuple[str, str]:
+    gh_repo = os.environ.get("GITHUB_REPOSITORY", "")
+    if "/" in gh_repo:
+        owner, repo = gh_repo.split("/", 1)
+        return owner, repo
+    owner = os.environ.get("GITHUB_OWNER", "")
+    repo = os.environ.get("GITHUB_REPO", "ponteo-project")
+    if not owner:
+        raise SystemExit(
+            "Set GITHUB_REPOSITORY or GITHUB_OWNER (and optionally GITHUB_REPO) "
+            "before running this script."
+        )
+    return owner, repo
+
+
+OWNER, REPO = _resolve_owner_repo()
 BRANCH = os.environ.get("PROTECTED_BRANCH", "main")
 
 # Merge gates only — deploy approval (Stages 5–6) stays separate from merge.

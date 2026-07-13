@@ -99,11 +99,11 @@ Configure IAM manually in the AWS Console (no policy files in this repo).
 2. **IAM role** (IAM → Roles → Create role → Web identity)
    - Identity provider: `token.actions.githubusercontent.com`
    - Audience: `sts.amazonaws.com`
-   - Trust condition (example `sub` values for repo `kushagra-g9/ponteo-project`):
-     - `repo:kushagra-g9/ponteo-project:ref:refs/heads/main`
-     - `repo:kushagra-g9/ponteo-project:ref:refs/heads/staging`
-     - `repo:kushagra-g9/ponteo-project:ref:refs/heads/develop`
-     - `repo:kushagra-g9/ponteo-project:pull_request`
+   - Trust condition (example `sub` values for repo `YOUR_USER/ponteo-project`):
+     - `repo:YOUR_USER/ponteo-project:ref:refs/heads/main`
+     - `repo:YOUR_USER/ponteo-project:ref:refs/heads/staging`
+     - `repo:YOUR_USER/ponteo-project:ref:refs/heads/develop`
+     - `repo:YOUR_USER/ponteo-project:pull_request`
 
 3. **Permissions policy** (attach inline or managed policy on that role)
    - **ECR:** `ecr:GetAuthorizationToken` (resource `*`)
@@ -163,7 +163,7 @@ BEDROCK_COST_MODE=smart
 AWS_ROLE_ARN=arn:aws:iam::YOUR_ACCOUNT_ID:role/github-actions-ponteo-project-ci
 SONAR_TOKEN=<token>
 SONAR_HOST_URL=https://sonarcloud.io
-GOOGLE_CHAT_WEBHOOK_URL=https://chat.googleapis.com/v1/spaces/.../messages?key=...&token=...
+GOOGLE_CHAT_WEBHOOK_URL=<your-google-chat-incoming-webhook-url>
 ```
 
 ---

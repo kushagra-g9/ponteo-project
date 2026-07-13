@@ -44,7 +44,7 @@ Use a **public** repo if you need Stage 5 manual approval on GitHub Free.
 
 ```
 AWS_REGION=us-east-1
-ECR_REGISTRY=ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com
+ECR_REGISTRY=YOUR_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com
 ECR_REPOSITORY=ponteo/ponteo-project
 SERVICE_NAME=ponteo-project
 SONAR_PROJECT_KEY=<your-key>
@@ -56,7 +56,7 @@ BEDROCK_COST_MODE=smart
 ## 6. GitHub Secrets
 
 ```
-AWS_ROLE_ARN=arn:aws:iam::ACCOUNT:role/github-actions-ponteo-project-ci
+AWS_ROLE_ARN=arn:aws:iam::YOUR_ACCOUNT_ID:role/github-actions-ponteo-project-ci
 SONAR_TOKEN=<token>
 SONAR_HOST_URL=https://sonarcloud.io
 ```
