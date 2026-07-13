@@ -31,7 +31,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: ponteo-project
-          image: 514201996443.dkr.ecr.us-east-1.amazonaws.com/ponteo/ponteo-project:pr-16-43d71e1b4c72
+          image: 514201996443.dkr.ecr.us-east-1.amazonaws.com/ponteo/ponteo-project:pr-17-c936a44d43d8
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
