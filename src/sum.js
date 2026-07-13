@@ -9,7 +9,7 @@
  */
 function sum(a, b) {
   if (!Number.isFinite(a) || !Number.isFinite(b)) {
-    throw new TypeError('sum expects two finite number');
+    throw new TypeError('sum expects two finite numbers');
   }
   return a + b;
 }
