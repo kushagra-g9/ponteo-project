@@ -196,7 +196,7 @@ jobs:
           role-session-name: github-actions-bedrock-review-${{ github.run_id }}
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -315,7 +315,7 @@ jobs:
           role-session-name: github-actions-bedrock-tests-${{ github.run_id }}
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
