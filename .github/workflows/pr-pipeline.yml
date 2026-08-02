@@ -10,6 +10,7 @@
 # Stage 6: ArgoCD image tag update on argo-manifest branch
 #
 # Stage 4 flow: build image -> Trivy scan -> push to ECR (HIGH/CRITICAL blocks before push)
+# Runners: k8s-arc-runners (ARC on AKS)
 # =============================================================================
 name: PR Pipeline
 
@@ -61,7 +62,7 @@ env:
 jobs:
   notify-pr-started:
     name: 'Notify - PR pipeline started'
-    runs-on: ubuntu-latest
+    runs-on: k8s-arc-runners
     timeout-minutes: 5
     steps:
       - name: Checkout repository
@@ -84,7 +85,7 @@ jobs:
 
   stage-1-sonarqube:
     name: 'Stage 1 - SonarQube Scan'
-    runs-on: ubuntu-latest
+    runs-on: k8s-arc-runners
     timeout-minutes: 30
     steps:
       - name: Checkout repository
@@ -172,7 +173,7 @@ jobs:
 
   stage-2-ai-review:
     name: 'Stage 2 - AI Code Review'
-    runs-on: ubuntu-latest
+    runs-on: k8s-arc-runners
     needs: stage-1-sonarqube
     timeout-minutes: 30
     steps:
@@ -276,7 +277,7 @@ jobs:
 
   stage-3-ai-tests:
     name: 'Stage 3 - AI-Assisted Tests'
-    runs-on: ubuntu-latest
+    runs-on: k8s-arc-runners
     needs: stage-2-ai-review
     timeout-minutes: 30
     steps:
@@ -422,7 +423,7 @@ jobs:
 
   stage-4-docker-ecr:
     name: 'Stage 4 - Docker build + Trivy scan + push to ECR'
-    runs-on: ubuntu-latest
+    runs-on: k8s-arc-runners
     needs: stage-3-ai-tests
     timeout-minutes: 45
     outputs:
@@ -494,7 +495,7 @@ jobs:
 
   notify-approval-required:
     name: 'Notify - Deploy approval required'
-    runs-on: ubuntu-latest
+    runs-on: k8s-arc-runners
     needs: stage-4-docker-ecr
     if: success()
     timeout-minutes: 5
@@ -537,7 +538,7 @@ jobs:
 
   stage-5-approval:
     name: 'Stage 5 - Manual approval needed to deploy'
-    runs-on: ubuntu-latest
+    runs-on: k8s-arc-runners
     needs: stage-4-docker-ecr
     environment:
       name: ${{ github.base_ref == 'main' && 'production' || 'staging' }}
@@ -573,7 +574,7 @@ jobs:
 
   stage-6-update-image-tag:
     name: 'Stage 6 - ArgoCD image tag update'
-    runs-on: ubuntu-latest
+    runs-on: k8s-arc-runners
     needs: [stage-4-docker-ecr, stage-5-approval]
     timeout-minutes: 10
     permissions:
@@ -729,7 +730,7 @@ jobs:
 
   notify-pipeline-outcome:
     name: 'Notify - Pipeline outcome'
-    runs-on: ubuntu-latest
+    runs-on: k8s-arc-runners
     needs:
       - stage-1-sonarqube
       - stage-2-ai-review
